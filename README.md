@@ -16,6 +16,8 @@ cost function and the false-reject rate, **not** detection AUROC.
 [Anomalib](https://github.com/openvinotoolkit/anomalib) EfficientAD on one MVTec AD
 category, with a reusable evaluation backbone. No LLM/agent yet.
 
+Full write-up: [docs/PHASE0_REPORT.md](docs/PHASE0_REPORT.md).
+
 ## Quickstart
 
 ```bash
