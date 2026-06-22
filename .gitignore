@@ -31,6 +31,9 @@ lightning_logs/
 results/**/*.npz
 results/**/anomaly_maps/
 results/**/*.png
+# ...but the Phase-1 risk-coverage plots ARE deliverables — keep them.
+!results/**/risk_coverage.png
+!results/**/risk_coverage_target.png
 
 # --- Local logs & scratch ---
 *.log

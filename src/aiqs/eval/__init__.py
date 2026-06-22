@@ -4,6 +4,24 @@ Phase 0:  detection metrics (metrics.py) + persistence (results.py).
 Phase 1+: decision metrics (decision.py) layered on the persisted per-image scores.
 """
 
+from aiqs.eval.decision import (
+    CostMatrix,
+    Decision,
+    DecisionMetrics,
+    cross_venn_abers,
+    decide,
+    decision_metrics,
+)
 from aiqs.eval.results import EvalResult, persist, print_baseline_summary
 
-__all__ = ["EvalResult", "persist", "print_baseline_summary"]
+__all__ = [
+    "EvalResult",
+    "persist",
+    "print_baseline_summary",
+    "CostMatrix",
+    "Decision",
+    "DecisionMetrics",
+    "cross_venn_abers",
+    "decide",
+    "decision_metrics",
+]
