@@ -28,11 +28,19 @@ _Generated: 20260622T130823Z_
 
 ## Decision metrics (Phase 1)
 
-_Calibrated, cost-aware, abstaining policy over per-image scores. Cost matrix (locked, relative): false-accept/escape = 10, false-reject/overkill = 3, escalate/review = 1. Calibration = cross (out-of-fold) Venn-Abers — every item's P(defective) is predicted by a calibrator that never saw it._
+_Calibrated, cost-aware, abstaining policy over per-image scores. Calibration = cross (out-of-fold) Venn-Abers — every item's P(defective) is predicted by a calibrator that never saw it. Cost matrices (relative, escape/overkill/review): illustrative **10/3/1**; realistic escape-dominant **100/3/1** (shipping a defect ≫ a re-inspection)._
 
 Detector image-AUROC = **0.976**; sample = 160 items (41 good / 119 defective, native prevalence 74%).
 
-### Native prevalence (74% defective) — honest substrate
+**Operating-envelope result (NOT a pass/fail).** Whether cost-aware abstention beats a well-tuned threshold depends on the regime, and this run maps where the boundary sits:
+
+- **Detector strength.** image-AUROC = 0.976 (STRONG — the threshold already captures most of the value).
+- **Review cost.** Abstention helps while review is cheap: here it beats the tuned threshold when review cost < 0.868 (native, escape/overkill = 10/3); at the locked review = 1 it does not.
+- **Cost asymmetry.** At low prevalence the illustrative 10/3/1 matrix makes escapes too cheap → PASS-all is optimal and abstention is moot. Under a realistic escape-dominant matrix (100/3/1: shipping a defect ≫ a re-inspection) the trade-off returns: there OURS BEATS naive at review = 1.
+
+**Takeaway:** cost-aware abstention is the right tool for **cheap review**, **weak/uncertain detectors**, or **escape-dominant low-prevalence** economics; with a strong detector + expensive review + mild cost asymmetry, a tuned threshold already suffices. The layer reports which regime you are in rather than asserting a universal win.
+
+### Native prevalence (74% defective) — matrix 10/3/1
 
 | policy | coverage | escalation | overkill (FRR) | escape (FAR) | cost/item |
 | --- | --- | --- | --- | --- | --- |
@@ -41,11 +49,13 @@ Detector image-AUROC = **0.976**; sample = 160 items (41 good / 119 defective, n
 | naive @ OUR escape rate (apples-to-apples) | 1.000 | 0.000 | 0.293 | 0.000 | 0.225 |
 | ours @ ~10% escalation (marker, not the policy) | 0.894 | 0.106 | 0.200 | 0.000 | 0.219 |
 
-_Verdict:_ OURS costs 0.0125 MORE/item than naive — abstention adds cost here (no separation to exploit / FAIL-or-PASS-all already optimal).
+_Verdict:_ STRONG detector / expensive review: abstention cuts overkill 0.293→0.160, but at review cost 1 the escalation overhead exceeds the error savings, so a tuned threshold wins on TOTAL cost (by 0.0125/item). Break-even: OURS wins once review cost < 0.868.
 
-### Target prevalence (2% defective) — production economics (label-shift corrected)
+**Break-even review cost (anti-cherry-pick, full sweep in `breakeven.csv` / `risk_coverage_breakeven.png`):** cost-aware abstention beats the tuned threshold on TOTAL cost when **review cost < 0.868** (units where escape=10, overkill=3). As review→0 escalation is free and OURS wins outright; as review rises the overhead overtakes the error savings.
 
-_Probabilities prior-shifted and metrics importance-weighted to the target defect rate (the benchmark's defect-heavy split is not a production line). Same correction applied to calibration and evaluation._
+### Target prevalence (2% defective), ILLUSTRATIVE matrix 10/3/1 — label-shift corrected
+
+_Probabilities prior-shifted and metrics importance-weighted to the target defect rate. Note: under 10/3/1 at this prevalence escapes are so cheap that PASS-all is cost-optimal (escape rate → 1.0). That is a **cost-matrix property, not a bug** — it motivates the realistic matrix below._
 
 | policy | coverage | escalation | overkill (FRR) | escape (FAR) | cost/item |
 | --- | --- | --- | --- | --- | --- |
@@ -54,11 +64,26 @@ _Probabilities prior-shifted and metrics importance-weighted to the target defec
 | naive @ OUR escape rate (apples-to-apples) | 0.975 | 0.025 | 0.000 | 0.473 | 0.114 |
 | ours @ ~10% escalation (marker, not the policy) | 0.910 | 0.090 | 0.000 | 1.000 | 0.110 |
 
-_Verdict:_ OURS costs 0.0318 MORE/item than naive — abstention adds cost here (no separation to exploit / FAIL-or-PASS-all already optimal).
+_Verdict:_ Abstention does not reduce errors here, so it only adds review cost — a tuned threshold (or FAIL/PASS-all) is already cost-optimal in this regime.
+
+### Target prevalence (2% defective), REALISTIC matrix 100/3/1 — escape-dominant
+
+_Same prior-shift/weights; escape now costs 100× an overkill, reflecting a real line where shipping a defect dwarfs a re-inspection. This restores the asymmetry that makes catching defects worthwhile at low prevalence._
+
+| policy | coverage | escalation | overkill (FRR) | escape (FAR) | cost/item |
+| --- | --- | --- | --- | --- | --- |
+| **OURS — LOCKED (review=1)** | 0.886 | 0.114 | 0.000 | 1.000 | 0.2487 |
+| naive fixed threshold (no abstention) | 1.000 | 0.000 | 0.049 | 0.084 | 0.3115 |
+| naive @ OUR escape rate (apples-to-apples) | 1.000 | 0.000 | 0.049 | 0.084 | 0.311 |
+| ours @ ~10% escalation (marker, not the policy) | 0.910 | 0.090 | 0.000 | 1.000 | 0.291 |
+
+_Verdict:_ OURS beats naive by 0.0628 cost/item (20% lower) — abstention pays off.
+
+**Break-even review cost (anti-cherry-pick, full sweep in `breakeven.csv` / `risk_coverage_breakeven.png`):** cost-aware abstention beats the tuned threshold on TOTAL cost when **review cost < 1.249** (units where escape=100, overkill=3). As review→0 escalation is free and OURS wins outright; as review rises the overhead overtakes the error savings.
 
 Secondary reference (single 50/50 split inductive Venn-Abers, held-out half, n=80, native prevalence): coverage 0.850, overkill 0.154, cost/item 0.2250.
 
-Plots: `risk_coverage.png` (native) + `risk_coverage_target.png` (target); full sweep `risk_coverage.csv`; per-item probabilities + decisions `decision_scores.csv`.
+Plots: `risk_coverage.png` (native), `risk_coverage_target.png` (target 10/3/1), `risk_coverage_target_realistic.png` (target 100/3/1), `risk_coverage_breakeven.png` (review-cost sweep); full sweeps `risk_coverage.csv` + `breakeven.csv`; per-item `decision_scores.csv`.
 
-**Root cause of the null result (read before quoting any number).** Two compounding facts: (1) the detector is intentionally weak (image-AUROC 0.976) — at the reduced 600-step CPU budget the per-image signal is essentially noise, so the calibrated P(defective) collapses to ~the base rate for BOTH classes and no policy (calibrated or not) can separate parts; (2) the benchmark split is 74%-defective — inverted from a production line — so even a perfect-economics policy reduces to FAIL-all (native) or PASS-all (target). The decision layer correctly reports it can extract no value here; the honesty guard flagged exactly this. **This is a CPU-constrained portfolio demo with only n_normal = 41 good parts (wide error bars), NOT a production validation.** A positive risk-coverage headline needs a real-separation detector — see the GPU upgrade path in README/CLAUDE.md. The decision machinery itself is validated on synthetic separating scores (`aiqs-sim-decision`).
+**Small-n caveat.** Only n_normal = 41 good parts → wide error bars; treat rates as indicative. CPU/Colab portfolio demo, not a production validation.
 
