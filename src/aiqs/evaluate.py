@@ -90,9 +90,19 @@ def _load_weights(model, ckpt) -> None:
     `engine.test(ckpt_path=...)` therefore fails on the missing metric keys. The
     metric buffers are accumulators, not learned weights, so loading the real
     weights non-strictly (and letting the metrics initialise fresh) is correct.
+
+    PatchCore adds a second wrinkle: its coreset `memory_bank` buffer is EMPTY in a
+    freshly built model and only gets its shape during fit. `load_state_dict` errors
+    on that size mismatch even with strict=False, so we resize such buffers to the
+    checkpoint shape before copying. (EfficientAD has no such buffer — this is a
+    no-op there.)
     """
     state = torch.load(str(ckpt), map_location="cpu")
     state_dict = state.get("state_dict", state)
+    ckpt_shapes = {k: v.shape for k, v in state_dict.items()}
+    for name, buf in model.named_buffers():
+        if name in ckpt_shapes and buf.shape != ckpt_shapes[name]:
+            buf.resize_(ckpt_shapes[name])
     model.load_state_dict(state_dict, strict=False)
 
 

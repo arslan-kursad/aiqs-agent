@@ -146,22 +146,35 @@ detector.** Deterministic spine only — NO LLM/agent yet (that is a later phase
       K-fold); non-fatal WEAK/SMALL-n warnings otherwise.
 - [x] `make decide RUN=<id>` (default latest), `make sim`, `make test`. **23/23 tests.**
 
-**Result on the current 600-step detector (image-AUROC 0.559) — HONEST NULL, reported
-as a feature not a bug.** The guard correctly **refused a false-positive headline**.
-Calibrated `P(defective)` collapses to ≈ the base rate for BOTH classes (good median
-0.69 vs defective 0.72) — at 0.559 AUROC there is no per-image signal for ANY policy to
-separate. Compounded by the benchmark's **74%-defective** test split (inverted from a
-production line): native → FAIL-all optimal (ours 0.894 vs naive 0.769 cost/item, ours
-adds cost); target-2% → PASS-all optimal (ours ≈ naive ≈ 0.200). Overkill pins at 100%
-at every coverage. **Root cause = 600-step undertraining (Phase-0 pixel-AUROC 0.94 vs
-image-AUROC 0.559 ⇒ signal is in the maps, not the image score), NOT category
-difficulty.** Fix = full-budget training on GPU (see upgrade path). The decision
-machinery is **validated** on synthetic separating scores (`make sim`, AUROC 0.92):
-there OURS beats the cost-optimal naive by 21% cost / overkill 0.18→0.04 (native) and
-11% cost (target-2%) — proving the code is correct when separation exists.
+**Two detectors run through the SAME decision layer — it reports an OPERATING ENVELOPE,
+not a universal win:**
 
-**Next: Phase 2** — once a real-separation detector exists, the LangGraph adjudication
-agent + VLM second-look layered on this decision spine.
+1. **600-step EfficientAD (image-AUROC 0.559) — HONEST NULL.** Guard refused a
+   false-positive headline; calibrated `P(defective)` collapses to ≈ the base rate for
+   both classes (good med 0.69 vs defective 0.72). Native → FAIL-all optimal; target-2%
+   → PASS-all. No separable signal for any policy. (Weak-detector corner of the envelope.)
+2. **PatchCore on Colab GPU (image-AUROC 0.976) — STRONG detector.** Now there IS signal:
+   native (10/3/1) OURS cuts **overkill 0.293→0.160 and escape→0** via abstention, but at
+   **review cost = 1** the escalation overhead exceeds the error savings, so the
+   cost-optimal naive THRESHOLD wins on TOTAL cost (ours 0.2375 vs naive 0.2250). This is
+   the **strong-detector / expensive-review** corner — NOT a null. (Colab run used the
+   pre-fix decide; the **break-even review cost** + **realistic-matrix** numbers below come
+   from re-running the updated `make decide` on that run's `image_scores.csv`.)
+
+**Operating envelope (the real Phase-1 finding).** Cost-aware abstention beats a tuned
+threshold when: **(a)** review is cheap (below the **break-even review cost**, reported
+per run from the full anti-cherry-pick sweep in `breakeven.csv`); **(b)** the detector is
+weak/uncertain (many borderline items); or **(c)** costs are **escape-dominant at low
+prevalence**. The benchmark's illustrative **10/3/1** at 2% makes escapes too cheap →
+PASS-all optimal (escape-rate→1.0, a cost-matrix property, NOT a bug); under a realistic
+**100/3/1** (shipping a defect ≫ a re-inspection) the trade-off returns and OURS beats the
+threshold. With a strong detector + expensive review + mild asymmetry, a tuned threshold
+already suffices — the layer says **which regime you're in**. Synthetic check (`make sim`,
+AUROC 0.92): OURS beats naive 21%/11% where separation exists.
+
+**Next: Phase 2** — the LangGraph adjudication agent + VLM second-look layered on this
+decision spine (the VLM second-look is the lever to LOWER effective review cost / sharpen
+the borderline band, i.e. push the break-even right so abstention pays off more often).
 
 ## Decision log
 
@@ -222,6 +235,28 @@ agent + VLM second-look layered on this decision spine.
   (`detector.py` + `config.py`); changes: new `configs/patchcore_cpu.yaml` (default),
   `build_train_engine` now branches step-driven vs epoch-driven, Makefile default
   flipped. EfficientAD configs retained.
+- **2026-06-22** — **PatchCore runs on Colab GPU, NOT locally.** WRN50-2 + coreset 0.1
+  on this 2-core/limited-RAM Intel-mac **stalled ~3h with no output** (RAM thrash /
+  greedy-coreset bound). Lowered `configs/patchcore_cpu.yaml` to **coreset 0.01 + batch
+  8** (PatchCore paper: 1% coreset ≈ full accuracy) for any local attempt, but the real
+  baseline is Colab (image-AUROC **0.976**). Do NOT re-run the detector locally to
+  "cross-check" a Colab score — different stack (anomalib 1.2/torch 2.2/CPU vs 2.x/CUDA)
+  → scores differ legitimately. The meaningful local check is `aiqs-decide` on the Colab
+  `image_scores.csv` (detector-free, deterministic). Also fixed `_load_weights` to
+  `resize_` PatchCore's empty `memory_bank` buffer before load (eval was untested).
+- **2026-06-22** — **Phase-1 reframed as an OPERATING-ENVELOPE result** (user, on the
+  0.976 PatchCore run). The old auto-verdict said "no separation to exploit" whenever
+  OURS cost ≥ naive — **wrong** for a strong detector. Fixed `_verdict` to distinguish
+  (a) weak-detector null from (b) strong-detector / **expensive-review** (abstention
+  cuts overkill+escape but review overhead > savings at review=1). Added: **break-even
+  review-cost sweep** (`breakeven_review_cost`; the swept value IS the true review cost,
+  driving policy AND accounting — distinct from the abstention-aggressiveness sweep; full
+  curve in `breakeven.csv`/`risk_coverage_breakeven.png`; sanity: review→0 MUST beat
+  naive); a **realistic escape-dominant matrix 100/3/1** for the low-prevalence regime
+  (the illustrative 10/3/1 makes escapes too cheap at 2% → PASS-all, a cost-matrix
+  property not a bug) reported side-by-side with 10/3/1; and an adaptive operating-
+  envelope writeup. Do NOT change the LOCKED matrix to manufacture a win — the full sweep
+  + domain-justified realistic matrix are the anti-cherry-pick controls.
 
 ## How Phase 1 extends the eval contract
 

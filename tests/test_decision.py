@@ -275,3 +275,92 @@ def test_machinery_no_value_when_signal_absent():
                 target_prevalence=0.02, grid=9)
     # ours must not be cheaper by more than noise — no manufactured separation
     assert a.target.m_ours.cost_per_item >= a.target.m_naive.cost_per_item - 1e-3
+
+
+# --------------------------------------------------------------------------- #
+# Break-even review cost + operating-envelope regimes
+# --------------------------------------------------------------------------- #
+
+def test_breakeven_review_cost_sanity_and_bounds():
+    from aiqs.eval.decision import breakeven_review_cost
+
+    scores, labels = simulate_scores(n=2000, auroc=0.92, prevalence=0.3, seed=0)
+    p, _, _ = cross_venn_abers(scores, labels, k=10, seed=0)
+    thr = cost_optimal_threshold(scores, labels, LOCKED)
+    naive_cost = decision_metrics(labels, naive_decide(scores, thr, 0.0), LOCKED).cost_per_item
+    rows, c_star = breakeven_review_cost(p, labels, 10.0, 3.0, naive_cost, grid=121)
+    # As review -> 0 escalation is free, so OURS MUST beat naive (the required sanity).
+    assert rows[0]["beats_naive"]
+    assert rows[0]["ours_cost"] <= naive_cost + 1e-9
+    # break-even sits within [0, ceiling].
+    ceil = 10.0 * 3.0 / (10.0 + 3.0)
+    assert 0.0 <= c_star <= ceil * 1.05 + 1e-9
+
+
+def test_breakeven_is_contiguous_from_zero_not_high_c_tie():
+    # Regression: weak detector + high prevalence -> naive = FAIL-all, and OURS also
+    # collapses to ~FAIL-all at high review cost, TYING naive there. The break-even must
+    # be the low crossing (end of the contiguous winning region from c=0), NOT the
+    # spurious high-c tie that a naive max-over-all-wins would return.
+    from aiqs.eval.decision import breakeven_review_cost
+
+    scores, labels = simulate_scores(n=800, auroc=0.56, prevalence=0.74, seed=5)
+    p, _, _ = cross_venn_abers(scores, labels, k=10, seed=0)
+    thr = cost_optimal_threshold(scores, labels, LOCKED)
+    naive_cost = decision_metrics(labels, naive_decide(scores, thr, 0.0), LOCKED).cost_per_item
+    rows, c_star = breakeven_review_cost(p, labels, 10.0, 3.0, naive_cost, grid=121)
+    losses = [r["review_cost"] for r in rows if r["ours_cost"] > naive_cost + 1e-9]
+    assert losses, "weak detector should make OURS lose at some review cost"
+    assert c_star <= min(losses) + 1e-9     # contiguous region ends before the first loss
+
+
+def test_verdict_expensive_review_branch_is_diagnosed():
+    # Direct, deterministic test of the verdict logic: ours costs MORE than naive but
+    # REDUCES overkill+escape -> must be diagnosed "expensive review" (the strong-detector
+    # / costly-review regime), NOT the old "no separation to exploit" bug.
+    from aiqs.decide import Regime, _verdict
+    from aiqs.eval.decision import DecisionMetrics
+
+    ours = DecisionMetrics(n=100, n_auto=80, coverage=0.80, escalation_rate=0.20,
+                           false_reject_rate=0.10, false_accept_rate=0.00,
+                           total_cost=30.0, cost_per_item=0.30)
+    naive = DecisionMetrics(n=100, n_auto=100, coverage=1.0, escalation_rate=0.0,
+                            false_reject_rate=0.25, false_accept_rate=0.02,
+                            total_cost=22.0, cost_per_item=0.22)
+    reg = Regime("native", 0.74, LOCKED, "10/3/1", ours, naive, 0.5, [], [], None, None,
+                 breakeven_rows=[{"review_cost": 0.0, "ours_cost": 0.0,
+                                  "escalation_rate": 1.0, "beats_naive": True}],
+                 breakeven_cost=0.6)
+    v = _verdict(reg)
+    assert "no separation to exploit" not in v          # regression guard
+    assert "expensive review" in v and "Break-even" in v
+
+
+def test_native_verdict_consistent_with_metrics():
+    # On real-shaped simulated data the verdict must agree with the actual cost ranking
+    # and never emit the removed buggy phrase.
+    from aiqs.decide import analyze, _verdict
+
+    scores, labels = simulate_scores(n=2000, auroc=0.95, prevalence=0.74, seed=3)
+    a = analyze(scores, labels, run_name="t", seed=0, folds=10,
+                target_prevalence=0.02, grid=11)
+    v = _verdict(a.native)
+    assert "no separation to exploit" not in v
+    if a.native.m_naive.cost_per_item - a.native.m_ours.cost_per_item > 1e-4:
+        assert "beats naive" in v
+    assert a.native.breakeven_cost is not None        # break-even always computed for native
+
+
+def test_realistic_escape_dominant_matrix_helps_at_low_prevalence():
+    # Under illustrative 10/3/1 at 2% prevalence, PASS-all is optimal (abstention moot).
+    # Under realistic escape-dominant 100/3/1, the trade-off returns and OURS should at
+    # least match — typically beat — the tuned threshold.
+    from aiqs.decide import analyze
+
+    scores, labels = simulate_scores(n=2500, auroc=0.95, prevalence=0.3, seed=1)
+    a = analyze(scores, labels, run_name="t", seed=0, folds=10,
+                target_prevalence=0.02, grid=11)
+    assert a.target.cost_label == "10/3/1"
+    assert a.target_realistic.cost_label == "100/3/1"
+    assert (a.target_realistic.m_ours.cost_per_item
+            <= a.target_realistic.m_naive.cost_per_item + 1e-9)

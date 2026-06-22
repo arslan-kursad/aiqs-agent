@@ -18,13 +18,18 @@ cost function and the false-reject rate, **not** detection AUROC.
   [docs/PHASE0_REPORT.md](docs/PHASE0_REPORT.md).
 - **Phase 1 — calibrated, cost-aware, abstaining decision layer.** Cross
   (out-of-fold) Venn-Abers calibration → cost-matrix `PASS/FAIL/ESCALATE` →
-  risk-coverage, with prevalence (label-shift) correction and an honesty guard. **The
-  layer + guard are complete and validated (23/23 tests).** On the current weak
-  600-step detector (image-AUROC 0.559) the guard correctly **refuses a false-positive
-  headline**: an honest null result (no separable signal to exploit). The positive
-  risk-coverage headline is **pending a real-separation detector** (GPU baseline,
-  below); the decision machinery is validated end-to-end on synthetic separating
-  scores (`make sim`). No LLM/agent yet.
+  risk-coverage, with prevalence (label-shift) correction, a **break-even review-cost**
+  analysis, and an honesty guard. **Complete and validated (27/27 tests); no LLM/agent
+  yet.** The layer reports an **operating envelope**, not a universal win:
+  - **Weak detector** (600-step EfficientAD, AUROC 0.559): the guard refuses a
+    false-positive headline — honest null, no separable signal.
+  - **Strong detector** (PatchCore on Colab, AUROC 0.976): abstention cuts overkill
+    (0.29→0.16) and drives escapes to 0, but at review cost = 1 the escalation overhead
+    exceeds the savings, so a tuned threshold wins on *total* cost. Cost-aware abstention
+    wins below a **break-even review cost**, and under a **realistic escape-dominant cost
+    matrix** at low prevalence (shipping a defect ≫ a re-inspection). `make decide`
+    reports both, with the full anti-cherry-pick sweep.
+  - Machinery is independently validated on synthetic separating scores (`make sim`).
 
 ## Quickstart
 

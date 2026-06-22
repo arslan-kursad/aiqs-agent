@@ -492,6 +492,46 @@ def risk_coverage_naive(scores: np.ndarray, labels: np.ndarray, threshold: float
     return rows
 
 
+def breakeven_review_cost(probs: np.ndarray, labels: np.ndarray, cost_fa: float,
+                          cost_fr: float, naive_cost_per_item: float, *,
+                          weights: np.ndarray | None = None, grid: int = 121
+                          ) -> tuple[list[dict], float]:
+    """Find the review cost below which cost-aware abstention beats a tuned threshold.
+
+    Distinct from ``risk_coverage_ours`` (which fixes the true review cost and sweeps
+    abstention aggressiveness): here the swept value IS the true review cost ``c`` — it
+    drives BOTH the policy (escalate when cheapest) AND the realized accounting. The
+    escalation-free naive baseline's cost does not depend on ``c`` (it never escalates),
+    so we sweep ``c`` and find the largest one at which OURS' total cost/item still
+    beats ``naive_cost_per_item``.
+
+    As ``c`` -> 0 escalation is free, so OURS MUST win (it escalates every item where
+    deciding risks more than 0); if it does not, that is a bug. As ``c`` rises past the
+    ceiling ``fa*fr/(fa+fr)`` the abstention band vanishes and OURS -> its 2-way
+    threshold. Returns (rows, break_even_cost). rows: review_cost, ours_cost,
+    escalation_rate, beats_naive.
+    """
+    ceil = cost_fa * cost_fr / (cost_fa + cost_fr)
+    rows = []
+    for c in np.linspace(0.0, ceil * 1.05, grid):
+        m = CostMatrix(false_accept=cost_fa, false_reject=cost_fr, escalation=float(c))
+        dm = decision_metrics(labels, decide(probs, m), m, weights=weights)
+        rows.append({"review_cost": float(c), "ours_cost": dm.cost_per_item,
+                     "escalation_rate": dm.escalation_rate,
+                     "beats_naive": bool(dm.cost_per_item <= naive_cost_per_item + 1e-12)})
+    # Break-even = the end of the CONTIGUOUS winning region from c=0. Scanning from 0,
+    # OURS wins cheaply (escalation ~free) and loses as review rises; we take the last c
+    # before the first STRICT loss. (A naive max-over-all-wins is wrong: at very high c
+    # OURS collapses to its 2-way threshold, which can TIE naive — e.g. both FAIL-all on
+    # a weak detector — re-entering the "wins" set far from the meaningful crossing.)
+    c_star = rows[-1]["review_cost"]
+    for i, r in enumerate(rows):
+        if r["ours_cost"] > naive_cost_per_item + 1e-12:   # first strict loss
+            c_star = rows[i - 1]["review_cost"] if i > 0 else 0.0
+            break
+    return rows, c_star
+
+
 # --------------------------------------------------------------------------- #
 # Prevalence correction (label shift): the benchmark test split is ~74% defective;
 # production lines run a LOW defect rate. Under the label-shift assumption (the
