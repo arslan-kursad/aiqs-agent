@@ -1,0 +1,34 @@
+# Reduced-budget baseline for the CPU-only Intel-mac host.
+#
+# Measured throughput on this host: ~8.4 s/step (0.12 it/s) for EfficientAD-S at
+# 256x256. The paper budget (70k steps, see configs/default.yaml) would take many
+# hours/days here, so this config trains a small, time-boxed budget to produce a
+# REAL — if not paper-grade — baseline number on real MVTec data + real ImageNette.
+#
+# This is explicitly a reduced baseline; the definitive run belongs on an
+# arm64/CUDA host with configs/default.yaml. Override steps with --max-steps.
+
+seed: 42
+category: screw
+
+dataset:
+  name: mvtec
+  root: datasets/mvtec
+  image_size: [256, 256]
+  train_batch_size: 1
+  eval_batch_size: 16
+  num_workers: 0
+
+model:
+  name: efficient_ad
+  size: small
+  imagenet_dir: datasets/imagenette   # real ImageNette (pre-downloaded)
+
+training:
+  max_steps: 600        # ~85 min training on this CPU; reduced budget
+  accelerator: auto     # cpu on this Intel host
+  devices: 1
+
+output:
+  models_dir: models
+  results_dir: results

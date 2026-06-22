@@ -7,7 +7,7 @@
 | **Phase** | 0 — foundation + detection baseline + evaluation skeleton |
 | **Date** | 2026-06-22 |
 | **Repository** | https://github.com/arslan-kursad/aiqs-agent (private) |
-| **Status** | Pipeline complete & validated end-to-end; real baseline number pending a training-budget decision |
+| **Status** | ✅ Complete — reduced-budget CPU baseline established (full-budget run deferred to a GPU/arm64 host) |
 | **Host** | Intel Core i5-5350U (2c @ 1.8 GHz), macOS 12.7.6, x86_64 — **CPU-only** |
 
 ---
@@ -24,11 +24,13 @@ reproducible foundation and (b) an evaluation backbone designed to be extended i
 Phase 1 with decision-level metrics.
 
 The full pipeline — **data preparation → training → evaluation → persisted results** —
-has been validated end-to-end on the host CPU. Five distinct real-world
-incompatibilities were discovered and resolved along the way (see §6). The only
-remaining Phase-0 item is producing a *meaningful* baseline number, which requires a
-real (non-trivial) training run; on this CPU-only host that is a time/throughput
-decision rather than an engineering one (see §9).
+has been validated end-to-end on the host CPU, and a real **reduced-budget baseline**
+has been produced (§9): strong pixel-level localisation (AUROC 0.94 / AUPRO 0.82) but a
+**weak, near-random image-level score** (AUROC 0.56) at the 600-step budget — which is
+exactly the untrustworthy-detector failure mode the Phase-1 adjudication layer exists to
+fix. Six distinct real-world incompatibilities were discovered and resolved along the
+way (see §6). The definitive, full-budget (70 000-step) run is deferred to a GPU/arm64
+host; the pipeline is ready to run there unchanged.
 
 ---
 
@@ -65,7 +67,7 @@ judged against.
 | 3 | Anomalib EfficientAD on one MVTec AD category, category configurable | ✅ Done (default `screw`) |
 | 4 | Reusable eval module: image AUROC, pixel AUPRO, AUPIMO (if cleanly supported); persist CSV + markdown; designed for Phase-1 decision metrics | ✅ Done |
 | 5 | Print a clear baseline summary | ✅ Done |
-| — | **Meaningful baseline number** (real training run) | ⏳ Pending decision (§9) |
+| — | **Meaningful baseline number** (real training run) | ✅ Done — reduced-budget (600-step) CPU run (§9) |
 
 ---
 
@@ -216,32 +218,45 @@ on a degenerate model is the **intended** behaviour and confirms the graceful-fa
 path. On a properly trained model, the anomaly maps are non-constant and these metrics
 become meaningful.
 
-> Note: the eval pass took ~13 min on CPU, dominated by anomalib's per-image
-> visualization rendering (which Phase 0 does not need). Disabling that callback is a
-> planned quick win before the real baseline (est. eval ≈ 2 min).
+> Note: the smoke eval initially took ~13 min on CPU, dominated by anomalib's per-image
+> visualization rendering (which Phase 0 does not need). `detector._silence_visualization()`
+> now no-ops that callback, cutting the test pass to ~4 min (used by the real baseline).
 
 ---
 
-## 9. Current state & the open decision
+## 9. Baseline result (reduced-budget CPU run)
 
-**Everything is in place to produce a real baseline.** What remains is a
-resource/throughput decision, not an engineering one, because the host is CPU-only:
+A **time-boxed local baseline** was run on the host CPU: real MVTec `screw` + real
+ImageNette, EfficientAD-S, **600 steps** (vs. the 70 000-step paper budget), 256×256.
+Total wall-clock **~115 min** at the measured ~8.4 s/step. Config:
+[`configs/baseline_cpu.yaml`](../configs/baseline_cpu.yaml); results under
+`results/runs/efficient_ad-small_mvtec-screw_20260622T055657Z/`.
 
-- A real baseline needs the **~1.5 GB** real ImageNette.
-- Paper-grade EfficientAD training is **70 000 steps**; on a 2-core 1.8 GHz CPU that is
-  impractical (many hours to days).
+| metric | value | reads as |
+| ------ | ----- | -------- |
+| pixel AUROC | **0.940** | strong defect **localisation** |
+| pixel AUPRO | **0.821** | strong region-overlap localisation |
+| pixel AUPIMO | 0.0023 | computed cleanly (no fallback); low, consistent with the weak image-level head at this budget |
+| **image AUROC** | **0.559** | **weak** image-level separation (near random) |
+| image F1Score | 0.685 | moderate at the adaptive operating point |
 
-Three options are on the table:
+Per-image score separation is tiny — mean anomaly score **0.539 (normal)** vs **0.554
+(anomalous)** over 41 normal / 119 anomalous test images — which is exactly why image
+AUROC is near random.
 
-- **A — Time-boxed local baseline:** measure CPU step-rate, choose a budget for a ~1–2 h
-  run, download ImageNette, train + eval, commit real numbers. Yields a genuine (if not
-  paper-grade) baseline this session.
-- **B — Defer to a GPU/arm64 host:** the pipeline is ready; run
-  `make baseline CATEGORY=screw` there at the full step budget for the definitive number.
-- **C — Quick non-degenerate run:** a short local run (~1 k steps) just to populate
-  `results/` with real-data numbers; weak but non-trivial.
+**Interpretation (and why this is the *right* baseline for this project).** With the
+pretrained teacher, EfficientAD localises defects well almost immediately (strong pixel
+metrics), but at 600 steps its **image-level anomaly score is poorly calibrated and
+barely separates good from defective parts.** That is precisely the failure mode this
+project targets: a raw detector whose image-level decision is *untrustworthy*. It is the
+motivation for the Phase-1 adjudication layer (calibration + cost-matrix
+PASS/FAIL/ESCALATE + abstention) — and the persisted `image_scores.csv` is the exact
+input that layer will consume.
 
-This report will be updated with the baseline table once the run completes.
+> This is explicitly a **reduced-budget** baseline. `screw` is one of the harder MVTec
+> categories; at the full 70 000-step budget EfficientAD reaches ~0.9 image AUROC. The
+> definitive, paper-grade run belongs on an arm64/CUDA host — the pipeline is ready:
+> `make baseline CATEGORY=screw` with `configs/default.yaml`.
 
 ---
 
@@ -249,10 +264,11 @@ This report will be updated with the baseline table once the run completes.
 
 - **MVTec AD 2** dataset and a refreshed AUPIMO — not supported on the anomalib 1.2
   line; revisit on anomalib 2.x.
-- Re-run the baseline at the full step budget on an arm64/CUDA host.
-- Disable the eval visualization callback to cut eval wall-time on CPU.
+- Re-run the baseline at the full 70 000-step budget on an arm64/CUDA host (the
+  600-step image-AUROC of 0.56 should reach ~0.9).
 - Wire `eval/decision.py`: calibration + cost-matrix PASS/FAIL/ESCALATE, computing
-  false-reject / escalation / decision-cost from the persisted per-image scores.
+  false-reject / escalation / decision-cost from the persisted per-image scores — the
+  weak, poorly-separated image scores from this baseline are the ideal first target.
 
 ---
 

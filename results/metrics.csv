@@ -1,0 +1,2 @@
+timestamp,run_id,seed,category,dataset,model,model_size,image_size,max_steps,accelerator,metric.pixel_auroc,metric.pixel_aupro,metric.pixel_aupimo,metric.image_auroc,metric.image_f1score
+20260622T055657Z,efficient_ad-small_mvtec-screw,42,screw,mvtec,efficient_ad,small,256x256,600,auto,0.9395726919174194,0.8210859894752502,0.0023010389241805962,0.5586186051368713,0.68544602394104

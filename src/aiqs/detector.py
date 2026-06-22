@@ -48,9 +48,29 @@ def build_train_engine(cfg: Config) -> Engine:
     )
 
 
+def _silence_visualization() -> None:
+    """Neutralise anomalib's per-image visualization callback.
+
+    The Engine unconditionally appends a `_VisualizationCallback` that renders and
+    saves a prediction overlay per image via matplotlib. Phase 0 needs metrics +
+    scores, not overlays, and on a CPU host this rendering dominates eval wall-time
+    (~13 min -> ~2 min for 160 images). We no-op its hooks rather than fight the
+    Engine's fixed callback list. Idempotent.
+    """
+    from anomalib.callbacks.visualizer import _VisualizationCallback
+
+    def _noop(self, *args, **kwargs):
+        return None
+
+    for hook in ("on_test_batch_end", "on_test_end",
+                 "on_predict_batch_end", "on_predict_end"):
+        setattr(_VisualizationCallback, hook, _noop)
+
+
 def build_eval_engine(cfg: Config, image_metrics, pixel_metrics,
                       callbacks=None) -> Engine:
     """Engine for evaluation with the requested metric collections."""
+    _silence_visualization()
     return Engine(
         task=TaskType.SEGMENTATION,
         default_root_dir=_root_dir(cfg),

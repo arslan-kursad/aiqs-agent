@@ -101,19 +101,27 @@ depend on `data`, so this is automatic.
 
 ## Current phase
 
-**Phase 0 — foundation + detection baseline + eval skeleton.** No LLM, no agent.
-
-Goal: a strong off-the-shelf detector on ONE category with a rigorous baseline.
+**Phase 0 — foundation + detection baseline + eval skeleton. ✅ COMPLETE.**
+No LLM, no agent.
 
 - [x] uv project (src layout, pyproject, committed lockfile), Makefile, README,
       .gitignore, `git init`.
 - [x] Pinned, verified-installable Intel-mac detector stack.
-- [ ] Train EfficientAD on one MVTec AD category (default: `screw`).
-- [ ] Eval backbone: image AUROC, pixel AUPRO, AUPIMO (supported in 1.2.0).
-- [ ] Persist results + print baseline summary.
+- [x] Train EfficientAD on one MVTec AD category (default: `screw`).
+- [x] Eval backbone: image AUROC, pixel AUPRO, AUPIMO (all working in 1.2.0).
+- [x] Persist results + print baseline summary.
+
+**Baseline (reduced budget, 600 steps, CPU, `configs/baseline_cpu.yaml`):**
+pixel AUROC **0.940** · pixel AUPRO **0.821** · pixel AUPIMO 0.0023 · image AUROC
+**0.559** · image F1 0.685. Strong localisation, weak image-level separation — the
+untrustworthy-detector case the Phase-1 layer targets. Full 70k-step run deferred to
+a GPU/arm64 host (`configs/default.yaml`). See `docs/PHASE0_REPORT.md`.
 
 Default category: **`screw`** (small/subtle defects → many borderline scores →
 good material for the Phase-1 adjudication layer). Fully configurable.
+
+**Next: Phase 1** — calibration + LangGraph adjudication agent + cost-matrix
+PASS/FAIL/ESCALATE, measured on the persisted `image_scores.csv`.
 
 ## Decision log
 
@@ -124,6 +132,10 @@ good material for the Phase-1 adjudication layer). Fully configurable.
   70k-step EfficientAD budget is many hours here. Workflow: `make smoke` to verify
   wiring, then a real (possibly reduced-step) baseline locally; code kept
   device-agnostic for a full run on stronger hardware later.
+- **2026-06-22** — Ran the reduced-budget (600-step) CPU baseline (option A, user's
+  choice). Measured ~8.4 s/step. Pre-downloaded real ImageNette (~1.5 GB) in parallel.
+  Added `detector._silence_visualization()` (no-ops anomalib's viz callback) to cut the
+  eval test pass ~13 min → ~4 min. Result recorded above + in the report.
 - **2026-06-21** — anomalib's MVTec download URL 404s. Kept category **`screw`**
   (user's choice) by adding `prepare_data.py` to fetch screw-only from a public HF
   mirror and reorganise into anomalib's layout — works around the broken download
