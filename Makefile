@@ -9,12 +9,12 @@
 #   make decide RUN=<run_id>        # ...on a specific results/runs/<run_id>
 #   make test                       # unit tests
 
-CONFIG   ?= configs/default.yaml
+CONFIG   ?= configs/patchcore_cpu.yaml
 CATEGORY ?= screw
 RUN      ?=                 # Phase-1 run id (empty => latest run)
 UV       := uv run
 
-.PHONY: help install data train eval baseline smoke decide sim test clean
+.PHONY: help install data train eval baseline smoke smoke-patchcore decide sim test clean
 
 help:
 	@echo "Targets: install | data | train | eval | baseline | smoke | decide | test | clean"
@@ -48,6 +48,11 @@ smoke: data
 	$(UV) aiqs-train --config $(CONFIG) --category $(CATEGORY) \
 		--max-steps 10 --imagenet-dir $(SMOKE_IMAGENETTE)
 	$(UV) aiqs-eval  --config $(CONFIG) --category $(CATEGORY)
+
+# PatchCore smoke: no --imagenet-dir needed, no --max-steps (single epoch).
+smoke-patchcore: data
+	$(UV) aiqs-train --config configs/patchcore_cpu.yaml --category $(CATEGORY)
+	$(UV) aiqs-eval  --config configs/patchcore_cpu.yaml --category $(CATEGORY)
 
 # Phase-1 decision layer: calibrate + cost-matrix PASS/FAIL/ESCALATE on persisted
 # per-image scores. RUN defaults to the latest run.

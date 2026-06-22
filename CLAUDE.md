@@ -112,6 +112,9 @@ No LLM, no agent.
       .gitignore, `git init`.
 - [x] Pinned, verified-installable Intel-mac detector stack.
 - [x] Train EfficientAD on one MVTec AD category (default: `screw`).
+  **SUPERSEDED**: default detector switched to **PatchCore** (see decision log
+  2026-06-22 entry). EfficientAD configs preserved at `configs/default.yaml` +
+  `configs/baseline_cpu.yaml` for reference.
 - [x] Eval backbone: image AUROC, pixel AUPRO, AUPIMO (all working in 1.2.0).
 - [x] Persist results + print baseline summary.
 
@@ -211,6 +214,14 @@ agent + VLM second-look layered on this decision spine.
 - **2026-06-22** — Dev tooling: **pytest** pinned in a `[dependency-groups] dev` group
   (`>=8,<9`) — test-only, never enters the runtime resolve. `make test` /
   `uv run --group dev pytest`.
+- **2026-06-22** — **Detector switched to PatchCore** (from EfficientAD). Rationale:
+  PatchCore builds a coreset memory-bank in a **single epoch** (no 70k-step training
+  grind) and is typically **stronger at image-level separation** — exactly what the
+  Phase-1 decision layer needs. EfficientAD optimises inference speed, which is
+  irrelevant for the demo/eval pipeline. The harness was already detector-configurable
+  (`detector.py` + `config.py`); changes: new `configs/patchcore_cpu.yaml` (default),
+  `build_train_engine` now branches step-driven vs epoch-driven, Makefile default
+  flipped. EfficientAD configs retained.
 
 ## How Phase 1 extends the eval contract
 
@@ -224,11 +235,14 @@ rates are conditioned on the auto-decided subset (selective-classification conve
 
 ## Phase-1 follow-ups (logged, not done)
 
-- **Positive risk-coverage headline needs a real-separation detector.** Full-budget
-  EfficientAD on a CUDA/arm64 host (or **PatchCore**, stronger at image-level
-  separation — what this demo needs). Then `make baseline` → `make decide`. The GPU
-  upgrade path (drop caps → anomalib 2.x → optionally MVTec AD 2 → full budget) is in
-  README. Detector is swappable; the decision layer only consumes `image_scores.csv`.
+- **PatchCore baseline run pending.** `make baseline` (now defaults to PatchCore) will
+  produce the first real-separation image scores; then `make decide` should yield the
+  **positive risk-coverage headline** the 600-step EfficientAD could not deliver.
+  `configs/patchcore_cpu.yaml` uses WideResNet-50-2 backbone, 10% coreset sampling,
+  9 nearest neighbors — tunable. If image-AUROC is still weak on `screw`, try
+  `capsule` or `bottle` (easier categories).
+- **EfficientAD** configs (`default.yaml`, `baseline_cpu.yaml`) preserved. Full-budget
+  EfficientAD on GPU host remains an option for inference-speed benchmarking later.
 - **MVTec AD 2** dataset: not supported in anomalib 1.2.0 → using original
   **MVTec AD**. Revisit when on anomalib 2.x.
 - Cross-Venn-Abers trades exact single-split Venn validity for full data usage

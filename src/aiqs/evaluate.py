@@ -1,4 +1,4 @@
-"""Evaluate a trained EfficientAD checkpoint and persist a baseline.
+"""Evaluate a trained anomaly detector checkpoint and persist a baseline.
 
     uv run aiqs-eval --category screw
 

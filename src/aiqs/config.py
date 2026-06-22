@@ -26,12 +26,24 @@ class DatasetConfig:
 
 @dataclass
 class ModelConfig:
-    name: str = "efficient_ad"
-    size: str = "small"
+    name: str = "efficient_ad"          # 'efficient_ad' | 'patchcore'
+    size: str = "small"                 # EfficientAD only: small | medium
     # EfficientAD's penalty/distillation dataset. Real training pulls the full
     # ImageNette (~1.5 GB). The smoke test points this at a tiny synthetic folder
     # to keep wiring validation fast (see prepare_data.make_synthetic_imagenette).
     imagenet_dir: str = "datasets/imagenette"
+    # PatchCore-only knobs (ignored by EfficientAD). PatchCore builds a coreset
+    # memory bank in a single pass (no step grind) and tends to separate better at
+    # image level — see CLAUDE.md. A light backbone + small coreset keep it CPU-cheap.
+    backbone: str = "wide_resnet50_2"
+    layers: list[str] = field(default_factory=lambda: ["layer2", "layer3"])
+    coreset_sampling_ratio: float = 0.1
+    num_neighbors: int = 9
+
+    @property
+    def variant(self) -> str:
+        """Short label distinguishing artifacts (EfficientAD size vs PatchCore backbone)."""
+        return self.size if self.name == "efficient_ad" else self.backbone
 
 
 @dataclass
@@ -60,8 +72,8 @@ class Config:
     @property
     def run_id(self) -> str:
         """Stable, human-readable id used to name model/result artifacts."""
-        size = self.model.size
-        return f"{self.model.name}-{size}_{self.dataset.name}-{self.category}"
+        return (f"{self.model.name}-{self.model.variant}"
+                f"_{self.dataset.name}-{self.category}")
 
     def as_flat_dict(self) -> dict:
         """Flattened view for logging / CSV run-metadata columns."""
@@ -71,7 +83,7 @@ class Config:
             "category": self.category,
             "dataset": self.dataset.name,
             "model": self.model.name,
-            "model_size": self.model.size,
+            "model_size": self.model.variant,
             "image_size": f"{self.dataset.image_size[0]}x{self.dataset.image_size[1]}",
             "max_steps": self.training.max_steps,
             "accelerator": self.training.accelerator,
