@@ -18,7 +18,7 @@ dataset:
   num_workers: 0             # CPU/macOS host: 0 avoids worker-fork flakiness
 
 model:
-  name: efficient_ad
+  name: patchcore
   size: small                # small | medium  (EfficientAD-S / -M)
 
 training:

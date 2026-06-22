@@ -1,0 +1,38 @@
+# PatchCore baseline for the CPU-only Intel-mac host.
+#
+# PatchCore builds a coreset memory bank in a SINGLE PASS over training data
+# (no 70k-step grind like EfficientAD). On this host that means ~2-5 min total
+# training vs hours. It's also typically stronger at image-level separation
+# (what the Phase-1 decision layer needs). Inference speed is slower than
+# EfficientAD, but irrelevant for a demo / eval pipeline.
+#
+# Backbone is WideResNet-50-2 (torchvision ships pretrained weights, no
+# separate download). coreset_sampling_ratio=0.1 keeps memory-bank small
+# enough for CPU RAM (~0.5 GB for screw).
+
+seed: 42
+category: screw
+
+dataset:
+  name: mvtec
+  root: datasets/mvtec
+  image_size: [256, 256]
+  train_batch_size: 32       # PatchCore: feature extraction batch, bigger = faster
+  eval_batch_size: 16
+  num_workers: 0
+
+model:
+  name: patchcore
+  backbone: wide_resnet50_2
+  layers: [layer2, layer3]
+  coreset_sampling_ratio: 0.1
+  num_neighbors: 9
+
+training:
+  max_steps: -1              # PatchCore ignores max_steps; trains 1 epoch
+  accelerator: auto          # cpu on this Intel host
+  devices: 1
+
+output:
+  models_dir: models
+  results_dir: results
