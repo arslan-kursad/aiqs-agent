@@ -1,0 +1,2 @@
+timestamp,run_id,calibration,n,n_normal,n_defective,image_auroc,pi_source,target_prevalence,native_escalation_rate,native_overkill,native_cost_per_item,native_naive_cost_per_item,target_escalation_rate,target_overkill,target_cost_per_item,target_naive_cost_per_item
+20260622T091645Z,efficient_ad-small_mvtec-screw_20260622T055657Z,cross_venn_abers,160,41,119,0.5586,0.7438,0.02,0.2562,1.0,0.8938,0.7688,0.0,0.0,0.2,0.2

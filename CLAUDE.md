@@ -93,11 +93,15 @@ depend on `data`, so this is automatic.
   configurable** and every field is CLI-overridable.
 - Task runner: `Makefile` (`install` / `data` / `train` / `eval` / `baseline` /
   `smoke`).
-- Results: `results/metrics.csv` (one row per eval) + `results/runs/<id>/`
-  (`summary.md`, `image_scores.csv`) are **committed** so configs compare over
-  time. Datasets, checkpoints, and heavy per-pixel dumps are gitignored.
+- Results: `results/metrics.csv` (one row per eval) + `results/decisions.csv` (one
+  row per `aiqs-decide`) + `results/runs/<id>/` (`summary.md`, `image_scores.csv`,
+  Phase-1 `risk_coverage{,_target}.png` + `decision_scores.csv`) are **committed** so
+  configs compare over time. Datasets, checkpoints, and heavy per-pixel dumps are
+  gitignored (the risk-coverage plots are explicitly un-ignored).
 - The eval backbone (`src/aiqs/eval/`) is the spine every later phase is measured
-  against; `eval/decision.py` is the Phase-1 decision-metrics contract (stub now).
+  against; `eval/decision.py` is the Phase-1 decision contract + calibration/policy
+  (implemented). Entry points: `aiqs-decide` (real), `aiqs-sim-decision` (synthetic
+  machinery validation, walled off under `results/synthetic_validation/`).
 
 ## Current phase
 
@@ -120,8 +124,41 @@ a GPU/arm64 host (`configs/default.yaml`). See `docs/PHASE0_REPORT.md`.
 Default category: **`screw`** (small/subtle defects → many borderline scores →
 good material for the Phase-1 adjudication layer). Fully configurable.
 
-**Next: Phase 1** — calibration + LangGraph adjudication agent + cost-matrix
-PASS/FAIL/ESCALATE, measured on the persisted `image_scores.csv`.
+**Phase 1 — calibrated, cost-aware, abstaining decision layer. ✅ COMPLETE & VALIDATED
+(layer + harness + honesty guard). Positive headline PENDING a real-separation
+detector.** Deterministic spine only — NO LLM/agent yet (that is a later phase).
+
+- [x] `eval/decision.py`: cost-matrix policy (`expected-cost argmin`, tie-break
+      ESCALATE>FAIL>PASS), conformal calibration, metrics, guard — all pure
+      numpy/sklearn (no torch).
+- [x] **Calibration = cross (out-of-fold) Venn-Abers** (PRIMARY) + single 50/50 split
+      inductive Venn-Abers (SECONDARY reference). See decision-log for why **not MAPIE**.
+- [x] **Prevalence (label-shift) correction**: prior-shift of probabilities +
+      importance-weighted metrics to a target production defect rate (default 2%),
+      applied consistently to calibration and evaluation.
+- [x] Risk-coverage sweep (escalation-cost knob 0→30/13≈2.31); BOTH risk axes
+      (overkill rate + per-item cost); naive baseline = **cost-optimal** fixed
+      threshold (+ calibration-free margin curve), matched-escape apples-to-apples.
+- [x] Honesty guard: STOP on signal-free input (std≈0 / AUROC∈[0.47,0.53] / too few to
+      K-fold); non-fatal WEAK/SMALL-n warnings otherwise.
+- [x] `make decide RUN=<id>` (default latest), `make sim`, `make test`. **23/23 tests.**
+
+**Result on the current 600-step detector (image-AUROC 0.559) — HONEST NULL, reported
+as a feature not a bug.** The guard correctly **refused a false-positive headline**.
+Calibrated `P(defective)` collapses to ≈ the base rate for BOTH classes (good median
+0.69 vs defective 0.72) — at 0.559 AUROC there is no per-image signal for ANY policy to
+separate. Compounded by the benchmark's **74%-defective** test split (inverted from a
+production line): native → FAIL-all optimal (ours 0.894 vs naive 0.769 cost/item, ours
+adds cost); target-2% → PASS-all optimal (ours ≈ naive ≈ 0.200). Overkill pins at 100%
+at every coverage. **Root cause = 600-step undertraining (Phase-0 pixel-AUROC 0.94 vs
+image-AUROC 0.559 ⇒ signal is in the maps, not the image score), NOT category
+difficulty.** Fix = full-budget training on GPU (see upgrade path). The decision
+machinery is **validated** on synthetic separating scores (`make sim`, AUROC 0.92):
+there OURS beats the cost-optimal naive by 21% cost / overkill 0.18→0.04 (native) and
+11% cost (target-2%) — proving the code is correct when separation exists.
+
+**Next: Phase 2** — once a real-separation detector exists, the LangGraph adjudication
+agent + VLM second-look layered on this decision spine.
 
 ## Decision log
 
@@ -141,11 +178,61 @@ PASS/FAIL/ESCALATE, measured on the persisted `image_scores.csv`.
   mirror and reorganise into anomalib's layout — works around the broken download
   without changing the approved architecture. (Turnkey alt was `capsule`, which
   has a clean single-tarball mirror; not needed since the screw adapter works.)
+- **2026-06-22** — Phase-1 **calibration = Venn-Abers, implemented directly (NOT
+  MAPIE)**. MAPIE's classification API emits prediction *sets*, but the expected-cost
+  argmin needs a scalar `P(defective)`; and our "model" is a single 1-D score, not a
+  fitted sklearn estimator with `predict_proba`. Venn-Abers (conformal family) yields
+  exactly that calibrated scalar in ~30 lines on `sklearn.IsotonicRegression`
+  (already shipped) — no new dependency, no fighting the library. **PRIMARY = cross /
+  out-of-fold Venn-Abers** (every item predicted by a calibrator that never saw it →
+  leakage-free, uses all data; the right call given only **41 normal parts** make a
+  single 50/50 split too fragile). SECONDARY = single-split inductive Venn-Abers as a
+  spec-literal reference. Merge `p = p1/(1-p0+p1)`. User-approved.
+- **2026-06-22** — **Cost matrix LOCKED (relative):** false-accept/escape **10**,
+  false-reject/overkill **3**, escalate/review **1**, correct PASS/FAIL **0**. At
+  these costs the optimal policy is PASS `p≤0.10` / ESCALATE `0.10<p<0.667` / FAIL
+  `p≥0.667`; ties break ESCALATE>FAIL>PASS (never silently PASS uncertain).
+- **2026-06-22** — **Phase-1 result on the 600-step detector is an HONEST NULL** (see
+  Current phase). Decided (user) to **commit it honestly**: the guard refusing a
+  false-positive headline on a 0.559-AUROC detector is the deliverable's integrity
+  feature. Kept the null plots; wrote up the root cause (weak detector + 74% base rate
+  ⇒ FAIL-all/PASS-all near-optimal). Positive headline deferred to a GPU baseline.
+- **2026-06-22** — Added **prevalence (label-shift) reweighting** (REQUIRED, user): the
+  74%-defective benchmark inverts production economics. Under the label-shift
+  assumption (class-conditional score densities invariant), `prior_shift` corrects the
+  Venn-Abers probabilities to a target prior (Saerens/Elkan odds rescale) and
+  `prevalence_weights` importance-weights the metrics — same `(target/source)` ratios,
+  so calibration and evaluation stay consistent. We **weight, not subsample** (only 41
+  normal parts). Default target prevalence **2%**.
+- **2026-06-22** — Added a **LABELED synthetic machinery validation** (`aiqs-sim-decision`,
+  option B), walled off under `results/synthetic_validation/` with a loud SYNTHETIC
+  banner and never written to `results/decisions.csv`. Purpose: prove the code is
+  correct on a separating detector, NOT that the approach works on real data.
+- **2026-06-22** — Dev tooling: **pytest** pinned in a `[dependency-groups] dev` group
+  (`>=8,<9`) — test-only, never enters the runtime resolve. `make test` /
+  `uv run --group dev pytest`.
+
+## How Phase 1 extends the eval contract
+
+Phase 0 = detection metrics (`metrics.py`) + persistence (`results.py`). Phase 1 layers
+decision metrics on the persisted per-image scores **without re-running the detector**:
+`CostMatrix` (locked), `Decision` enum, `DecisionMetrics` (coverage, escalation,
+overkill/escape rates on the AUTO-DECIDED subset, realized cost; importance-weightable
+to a target prevalence). The headline is the **risk–coverage curve**, not AUROC. Risk
+rates are conditioned on the auto-decided subset (selective-classification convention)
+— this extends, not forks, the Phase-0 stub.
 
 ## Phase-1 follow-ups (logged, not done)
 
+- **Positive risk-coverage headline needs a real-separation detector.** Full-budget
+  EfficientAD on a CUDA/arm64 host (or **PatchCore**, stronger at image-level
+  separation — what this demo needs). Then `make baseline` → `make decide`. The GPU
+  upgrade path (drop caps → anomalib 2.x → optionally MVTec AD 2 → full budget) is in
+  README. Detector is swappable; the decision layer only consumes `image_scores.csv`.
 - **MVTec AD 2** dataset: not supported in anomalib 1.2.0 → using original
   **MVTec AD**. Revisit when on anomalib 2.x.
-- Re-run the baseline at full step budget on an arm64/CUDA host (anomalib 2.x).
-- Wire `eval/decision.py`: calibration + cost-matrix PASS/FAIL/ESCALATE, computing
-  false-reject rate / escalation rate / decision cost from persisted scores.
+- Cross-Venn-Abers trades exact single-split Venn validity for full data usage
+  (standard, slightly-conservative cross-conformal trade-off); fine here, revisit if a
+  larger labelled set becomes available.
+- **Phase 2:** LangGraph adjudication agent + VLM second-look + Langfuse, layered on
+  this decision spine, once a usable detector exists.

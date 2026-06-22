@@ -38,6 +38,14 @@ dependencies = [
 aiqs-prepare-data = "aiqs.prepare_data:main"
 aiqs-train = "aiqs.train:main"
 aiqs-eval = "aiqs.evaluate:main"
+aiqs-decide = "aiqs.decide:main"
+aiqs-sim-decision = "aiqs.simulate_decision:main"
+
+# Dev-only tooling. pytest is a test dependency (not shipped/imported by the core);
+# kept out of [project.dependencies] so it never enters the runtime resolve. Pure
+# Python — no torch/NumPy-ABI interaction, so no contemporaneous cap needed.
+[dependency-groups]
+dev = ["pytest>=8,<9"]
 
 [build-system]
 requires = ["uv_build>=0.11.16,<0.12.0"]
