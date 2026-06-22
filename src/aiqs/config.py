@@ -1,0 +1,139 @@
+"""Typed config: YAML file + CLI overrides.
+
+Deliberately small (stdlib + PyYAML, nested dataclasses). No omegaconf/pydantic —
+Phase 0 does not need them, and the north star says no premature abstraction.
+"""
+
+from __future__ import annotations
+
+import argparse
+import dataclasses
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import yaml
+
+
+@dataclass
+class DatasetConfig:
+    name: str = "mvtec"
+    root: str = "datasets/mvtec"
+    image_size: tuple[int, int] = (256, 256)
+    train_batch_size: int = 1
+    eval_batch_size: int = 16
+    num_workers: int = 0
+
+
+@dataclass
+class ModelConfig:
+    name: str = "efficient_ad"
+    size: str = "small"
+    # EfficientAD's penalty/distillation dataset. Real training pulls the full
+    # ImageNette (~1.5 GB). The smoke test points this at a tiny synthetic folder
+    # to keep wiring validation fast (see prepare_data.make_synthetic_imagenette).
+    imagenet_dir: str = "datasets/imagenette"
+
+
+@dataclass
+class TrainingConfig:
+    max_steps: int = 70000
+    accelerator: str = "auto"
+    devices: int = 1
+
+
+@dataclass
+class OutputConfig:
+    models_dir: str = "models"
+    results_dir: str = "results"
+
+
+@dataclass
+class Config:
+    seed: int = 42
+    category: str = "screw"
+    dataset: DatasetConfig = field(default_factory=DatasetConfig)
+    model: ModelConfig = field(default_factory=ModelConfig)
+    training: TrainingConfig = field(default_factory=TrainingConfig)
+    output: OutputConfig = field(default_factory=OutputConfig)
+
+    # ---- run identity (derived) -------------------------------------------
+    @property
+    def run_id(self) -> str:
+        """Stable, human-readable id used to name model/result artifacts."""
+        size = self.model.size
+        return f"{self.model.name}-{size}_{self.dataset.name}-{self.category}"
+
+    def as_flat_dict(self) -> dict:
+        """Flattened view for logging / CSV run-metadata columns."""
+        return {
+            "run_id": self.run_id,
+            "seed": self.seed,
+            "category": self.category,
+            "dataset": self.dataset.name,
+            "model": self.model.name,
+            "model_size": self.model.size,
+            "image_size": f"{self.dataset.image_size[0]}x{self.dataset.image_size[1]}",
+            "max_steps": self.training.max_steps,
+            "accelerator": self.training.accelerator,
+        }
+
+
+def _build_nested(cls, data: dict):
+    """Recursively coerce a plain dict into a (nested) dataclass instance.
+
+    Nested sub-configs are detected via each field's ``default_factory`` (a
+    dataclass type), which is robust to stringised annotations from
+    ``from __future__ import annotations``.
+    """
+    if not dataclasses.is_dataclass(cls):
+        return data
+    field_map = {f.name: f for f in dataclasses.fields(cls)}
+    kwargs = {}
+    for key, value in (data or {}).items():
+        if key not in field_map:
+            raise ValueError(f"Unknown config key '{key}' for {cls.__name__}")
+        factory = field_map[key].default_factory
+        is_subconfig = (
+            factory is not dataclasses.MISSING
+            and isinstance(factory, type)
+            and dataclasses.is_dataclass(factory)
+        )
+        if is_subconfig and isinstance(value, dict):
+            kwargs[key] = _build_nested(factory, value)
+        elif key == "image_size" and isinstance(value, list):
+            kwargs[key] = tuple(value)
+        else:
+            kwargs[key] = value
+    return cls(**kwargs)
+
+
+def load_config(path: str | Path) -> Config:
+    raw = yaml.safe_load(Path(path).read_text()) or {}
+    return _build_nested(Config, raw)
+
+
+def add_common_args(parser: argparse.ArgumentParser) -> None:
+    """Shared CLI flags for train/eval entry points."""
+    parser.add_argument(
+        "--config", default="configs/default.yaml", help="Path to YAML config."
+    )
+    parser.add_argument("--category", help="Override MVTec AD category.")
+    parser.add_argument(
+        "--max-steps", type=int, help="Override training.max_steps (e.g. smoke test)."
+    )
+    parser.add_argument("--accelerator", help="Override training.accelerator.")
+    parser.add_argument("--imagenet-dir", help="Override model.imagenet_dir.")
+
+
+def config_from_args(args: argparse.Namespace) -> Config:
+    """Load YAML then apply any CLI overrides that were provided."""
+    cfg = load_config(args.config)
+    if getattr(args, "category", None):
+        cfg.category = args.category
+    if getattr(args, "max_steps", None) is not None:
+        cfg.training.max_steps = args.max_steps
+    if getattr(args, "accelerator", None):
+        cfg.training.accelerator = args.accelerator
+    if getattr(args, "imagenet_dir", None):
+        cfg.model.imagenet_dir = args.imagenet_dir
+    return cfg

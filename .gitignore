@@ -1,0 +1,43 @@
+# NOTE: gitignore does NOT support trailing inline comments — each pattern must
+# be on its own line, comments on their own lines. (Learned the hard way.)
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# --- uv / venv ---
+.venv/
+# uv.lock IS committed (reproducibility — see CLAUDE.md). Do not ignore it.
+
+# --- Datasets & model artifacts (large, regenerable) ---
+# anomalib auto-downloads MVTec AD + imagenette here; we also stage prepared data
+datasets/
+# checkpoints / weights
+models/
+lightning_logs/
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.bin
+
+# --- Results ---
+# results/metrics.csv and results/runs/<id>/{summary.md,image_scores.csv,config.yaml}
+# ARE committed so configs can be compared over time. Heavy per-pixel dumps are not.
+results/**/*.npz
+results/**/anomaly_maps/
+results/**/*.png
+
+# --- Local logs & scratch ---
+*.log
+scratch_*.py
+
+# --- OS / editor ---
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,33 @@
+# AIQS-Agent — Phase 0 detection baseline config.
+# Every field is overridable from the CLI (see src/aiqs/config.py), e.g.
+#   uv run aiqs-train --category transistor --max-steps 10
+
+seed: 42
+
+# MVTec AD category. `screw` is the default: small/subtle defects where the
+# detector produces many borderline scores — good raw material for the Phase-1
+# adjudication layer. Category is fully configurable.
+category: screw
+
+dataset:
+  name: mvtec                # original MVTec AD (anomalib auto-downloads)
+  root: datasets/mvtec
+  image_size: [256, 256]
+  train_batch_size: 1        # EfficientAD trains with batch size 1
+  eval_batch_size: 16
+  num_workers: 0             # CPU/macOS host: 0 avoids worker-fork flakiness
+
+model:
+  name: efficient_ad
+  size: small                # small | medium  (EfficientAD-S / -M)
+
+training:
+  # Paper budget is 70k steps. On this Intel CPU host that is many hours; lower
+  # it for a quick-but-real local baseline, or run the full budget on a GPU host.
+  max_steps: 70000
+  accelerator: auto          # resolves to cpu on this Intel mac (no MPS/CUDA)
+  devices: 1
+
+output:
+  models_dir: models
+  results_dir: results
