@@ -306,6 +306,18 @@ verify ESCALATE∩good ≈ 30-40 → run the VLM there with the crop path enable
   User ran a propose→confirm loop on every choice (incl. a Dispatch review that sharpened
   the pinned "detector wrong" def and the CI-guarded/κ-secondary rule). Implemented locally
   (VLM = API call, not GPU); real headline still needs a hard category + Colab map export.
+- **2026-06-23** — **`evaluate._load_weights` made tensor-safe for PatchCore memory-bank
+  checkpoints.** The shape-diagnostic comprehension assumed every state_dict value was a
+  tensor and called `.shape`; PatchCore checkpoints carry non-tensor entries (strings/
+  scalars/metadata), so it crashed (`'str' object has no attribute 'shape'`) on every
+  non-screw category on Kaggle/Colab. Fix: guard the shape pass with
+  `isinstance(v, torch.Tensor)` (detector-agnostic — no model-name special-casing).
+  `strict=False` retained for the missing eval-metric buffers; the buffer-resize logic is
+  unchanged. Added: `_load_weights` now RETURNS the load result and WARNS (RuntimeWarning)
+  when any registered model buffer lands in `missing_keys` — guards against strict=False
+  silently swallowing an unrestored `memory_bank` (→ degenerate ~0.5 AUROC). Regression
+  test (`tests/test_evaluate_load.py`): a state_dict with non-tensor values does not raise
+  and tensors load; an omitted buffer surfaces in missing_keys + warns. 57/57 tests.
 
 ## How Phase 1 extends the eval contract
 

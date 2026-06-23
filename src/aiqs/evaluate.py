@@ -10,6 +10,7 @@ The per-image scores are the bridge to the Phase-1 adjudication layer.
 from __future__ import annotations
 
 import argparse
+import warnings
 from pathlib import Path
 
 import torch
@@ -82,8 +83,9 @@ class ScoreCollector(Callback):
         }
 
 
-def _load_weights(model, ckpt) -> None:
-    """Load trained weights with strict=False.
+def _load_weights(model, ckpt):
+    """Load trained weights with strict=False. Returns the load result (missing_keys /
+    unexpected_keys) so callers/tests can inspect what was and was not restored.
 
     The training checkpoint has no metric buffers (training ran with no metrics),
     but the eval model registers them (AUPRO/AUPIMO). A strict load via
@@ -91,19 +93,41 @@ def _load_weights(model, ckpt) -> None:
     metric buffers are accumulators, not learned weights, so loading the real
     weights non-strictly (and letting the metrics initialise fresh) is correct.
 
-    PatchCore adds a second wrinkle: its coreset `memory_bank` buffer is EMPTY in a
-    freshly built model and only gets its shape during fit. `load_state_dict` errors
-    on that size mismatch even with strict=False, so we resize such buffers to the
-    checkpoint shape before copying. (EfficientAD has no such buffer — this is a
-    no-op there.)
+    PatchCore adds two wrinkles, both handled detector-agnostically (no model-name
+    special-casing):
+      * Its coreset `memory_bank` buffer is EMPTY in a freshly built model and only
+        gets its shape during fit. `load_state_dict` errors on that size mismatch even
+        with strict=False, so we resize matching buffers to the checkpoint shape before
+        copying. (EfficientAD has no such buffer — a no-op there.)
+      * Its checkpoint state_dict holds NON-TENSOR entries (strings / scalars /
+        metadata). The shape pass therefore inspects only real tensors; load_state_dict
+        ignores the rest under strict=False.
+
+    strict=False can silently swallow a missing learned buffer (e.g. an unrestored
+    `memory_bank` -> degenerate ~0.5 AUROC), so we WARN when any of the model's own
+    registered buffers land in missing_keys instead of passing in silence.
     """
     state = torch.load(str(ckpt), map_location="cpu")
     state_dict = state.get("state_dict", state)
-    ckpt_shapes = {k: v.shape for k, v in state_dict.items()}
+    # Only real tensors carry a meaningful .shape; PatchCore stores non-tensor metadata.
+    ckpt_shapes = {k: v.shape for k, v in state_dict.items()
+                   if isinstance(v, torch.Tensor)}
     for name, buf in model.named_buffers():
         if name in ckpt_shapes and buf.shape != ckpt_shapes[name]:
             buf.resize_(ckpt_shapes[name])
-    model.load_state_dict(state_dict, strict=False)
+    result = model.load_state_dict(state_dict, strict=False)
+
+    missing_buffers = [n for n, _ in model.named_buffers() if n in set(result.missing_keys)]
+    if missing_buffers:
+        warnings.warn(
+            "load_state_dict (strict=False) did NOT restore these registered buffers "
+            f"from the checkpoint: {missing_buffers}. A missing learned buffer (e.g. a "
+            "PatchCore memory_bank) yields a degenerate detector — verify the checkpoint.",
+            RuntimeWarning, stacklevel=2)
+    if result.missing_keys or result.unexpected_keys:
+        print(f"  [load] missing_keys={len(result.missing_keys)} "
+              f"unexpected_keys={len(result.unexpected_keys)} (strict=False)")
+    return result
 
 
 def _run_test(cfg, datamodule, ckpt, collector, use_aupimo):
