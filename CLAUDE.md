@@ -172,9 +172,35 @@ threshold. With a strong detector + expensive review + mild asymmetry, a tuned t
 already suffices — the layer says **which regime you're in**. Synthetic check (`make sim`,
 AUROC 0.92): OURS beats naive 21%/11% where separation exists.
 
-**Next: Phase 2** — the LangGraph adjudication agent + VLM second-look layered on this
-decision spine (the VLM second-look is the lever to LOWER effective review cost / sharpen
-the borderline band, i.e. push the break-even right so abstention pays off more often).
+**Phase 2A — VLM second-look on the ESCALATE bucket. 🟡 BACKBONE COMPLETE (mock-tested);
+real-data headline PENDING a hard category + Colab anomaly-map export.** The FIRST LLM
+component. Layers a vision-LLM adjudication step ON TOP of the Phase-1 spine, ESCALATE-only.
+
+- [x] `src/aiqs/vlm/` — plain-function abstain pipeline around a node-shaped seam
+      (`VLMState` + `adjudicate(state)->state`). **NO LangGraph in 2A** (E1, locked): a
+      single-node/single-pass graph violates "no premature abstraction"; 2B wraps the seam
+      as a node with no re-scaffold. Single model **claude-sonnet-4-6 vision**, NO Opus tier.
+- [x] Calibrated abstain RULE = Phase-1 `decide_one` on a PROVISIONAL/UNCALIBRATED
+      `p_vlm` (confidence→p map + shrinkage λ; full VLM calibration deferred to 2B). The
+      100/3/1 matrix self-floors auto-PASS of a likely defect. Single-pass (VLM→human).
+- [x] `src/aiqs/eval/vlm_eval.py` — the heart: (a) raw accuracy + confusion; (b)
+      **error-INDEPENDENCE** vs the detector with the PINNED "detector wrong" = Phase-1
+      naive cost-optimal threshold call, and the PRE-REGISTERED rule (load-bearing
+      `Wilson-lo[P(VLM correct|det wrong)] > 0.50`; corroborating `κ<0.20` with bootstrap
+      CI, never load-bearing alone); (c) bidirectional value (rescued→PASS / correct FAIL);
+      (d) effective-review-cost BAND over λ vs Phase-1 break-even 0.868; (e) **K-run
+      rule-stability** — rule recomputed each of K=5 runs, headline = modal + "x/5".
+- [x] Substrate guard in code: STOP if ESCALATE∩good < 15, warn < 30.
+- [x] `aiqs-vlm` / `make vlm RUN=<id> [MOCK=1]`; Langfuse wired (no-op without keys);
+      anthropic+langfuse+pydantic deps resolved (lockfile, protobuf 7→6 harmless). **55/55
+      tests (28 Phase-1 + 27 Phase-2A, all VLM mocked — no API).**
+- [x] Wiring smoke on screw native-74 (bucket 26 = 16 good/10 def) passes end-to-end;
+      mock output is WALLED OFF (`mock_vlm_*`, gitignored, loud banner — never touches the
+      real `summary.md`), exactly like the synthetic validation. screw = smoke, NOT headline.
+
+**Next (real 2A headline):** a HARD category (capsule/hazelnut/AD2) where good parts get
+borderline scores → Colab train + **anomaly-map export** (crop input) → `make decide` to
+verify ESCALATE∩good ≈ 30-40 → run the VLM there with the crop path enabled.
 
 ## Decision log
 
@@ -257,6 +283,29 @@ the borderline band, i.e. push the break-even right so abstention pays off more 
   property not a bug) reported side-by-side with 10/3/1; and an adaptive operating-
   envelope writeup. Do NOT change the LOCKED matrix to manufacture a win — the full sweep
   + domain-justified realistic matrix are the anti-cherry-pick controls.
+- **2026-06-23** — **Phase-2A substrate finding (zeroth step before any LLM code).**
+  Counted the ESCALATE bucket on the 0.976 PatchCore run, split by label: native-74%
+  ESCALATE∩good=**16**; target-2% ESCALATE∩good=**1 (DEAD)**. Prior-shift to 2% drops
+  defect odds ~140× and a strong detector collapses good parts to p≈0 (PASS), EMPTYING the
+  borderline band of goods (reweighting does NOT fatten it — the user's hypothesis, falsified
+  by data). ⇒ standard MVTec `screw` cannot show the overkill-reduction lever at thesis
+  prevalence; the lever needs a genuinely HARD category/AD2. Operating-envelope BOUNDARY,
+  not a failure. screw = wiring smoke only.
+- **2026-06-23** — **Phase-2A design LOCKED, then built (backbone).** ESCALATE-only; single
+  claude-sonnet-4-6 (no Opus tier → 2B); calibrated abstain RULE on a PROVISIONAL/UNCALIBRATED
+  p_vlm (Venn-Abers VLM calibration → 2B) reported as a shrinkage-λ SENSITIVITY BAND led from
+  the conservative end; **E1: no LangGraph in 2A** (single-node/single-pass violates "no
+  premature abstraction" — built as plain functions around a `VLMState`+`adjudicate` seam
+  that 2B wraps as a node); full-image-only now (a SIGNAL-PATH change, not just small-n — the
+  crop run is the real mechanism); **"detector wrong" PINNED** to the Phase-1 naive
+  cost-optimal threshold (honest no-layer comparator); **PRE-REGISTERED error-independence
+  rule** (load-bearing Wilson-lo[P(VLM correct|det wrong)]>0.50; κ<0.20 corroborating-only
+  with bootstrap CI; recomputed per K-run → modal + K-stability headline). Deps
+  anthropic/langfuse/pydantic resolve on the pinned stack (desk-check + uv-resolve GREEN;
+  protobuf 7→6 harmless). Mock smoke walled off (`mock_vlm_*`, gitignored). 55/55 tests.
+  User ran a propose→confirm loop on every choice (incl. a Dispatch review that sharpened
+  the pinned "detector wrong" def and the CI-guarded/κ-secondary rule). Implemented locally
+  (VLM = API call, not GPU); real headline still needs a hard category + Colab map export.
 
 ## How Phase 1 extends the eval contract
 

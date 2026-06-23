@@ -43,3 +43,7 @@ scratch_*.py
 .idea/
 .vscode/
 *.swp
+
+# Phase-2A mock VLM smoke artifacts (wiring only, never evidence)
+results/runs/*/mock_vlm_results.csv
+results/runs/*/mock_vlm_summary.md

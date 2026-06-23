@@ -65,6 +65,11 @@ decide:
 sim:
 	$(UV) aiqs-sim-decision
 
+# Phase-2A VLM second-look on the ESCALATE bucket. RUN defaults to the latest run.
+# MOCK=1 runs the wiring smoke (no API key, no cost); otherwise needs ANTHROPIC_API_KEY.
+vlm:
+	$(UV) aiqs-vlm $(if $(RUN),--run $(RUN),) $(if $(MOCK),--mock,)
+
 # Unit tests for the decision policy / calibration / guard (dev group).
 test:
 	uv run --group dev pytest -q
