@@ -27,7 +27,7 @@ class MockVLMBackend:
         return VLMVerdict(verdict="clean", confidence=0.9, reasoning="Mock result")
 
 class AnthropicVLMBackend:
-    def __init__(self, model="claude-3-5-sonnet-20240620"):
+    def __init__(self, model="claude-3-5-sonnet-latest"):
         self.model = model
         self._client = None
 
