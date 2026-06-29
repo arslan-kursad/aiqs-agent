@@ -82,16 +82,20 @@ def main() -> int:
         print("[smoke] PASS — the 2.x path is wired. Re-run without --smoke for the real round.")
         return 0
 
+    py = sys.executable
     base = ["--config", args.config, "--category", args.category]
-    # 1-3 stream to console (the user watches train/eval/decide live).
-    for cmd in (["aiqs-train", *base], ["aiqs-eval", *base], ["aiqs-decide"]):
+    # `python -m` (not the console scripts) so this works with PYTHONPATH=src too, no PATH
+    # dependency. 1-3 stream to console (the user watches train/eval/decide live).
+    for cmd in ([py, "-m", "aiqs.train", *base],
+                [py, "-m", "aiqs.evaluate", *base],
+                [py, "-m", "aiqs.decide"]):
         r = _run(cmd)
         if r.returncode != 0:
-            sys.exit(f"STOP: `{cmd[0]}` failed (rc={r.returncode}). Fix it before continuing.")
+            sys.exit(f"STOP: `{' '.join(cmd[2:])}` failed (rc={r.returncode}). Fix it first.")
 
     # 4) substrate report — capture so we can extract the numbers; rc==2 == SubstrateError
     #    (ESCALATE∩good < 15) is a VALID "no substrate" outcome, not a crash.
-    vlm = _run(["aiqs-vlm", "--mock"], capture=True)
+    vlm = _run([py, "-m", "aiqs.vlm_decide", "--mock"], capture=True)
     out = (vlm.stdout or "") + (vlm.stderr or "")
     print(out)
     if vlm.returncode not in (0, 2):
