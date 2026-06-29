@@ -12,11 +12,12 @@ cost function and the false-reject rate, **not** detection AUROC.
 
 ## Status
 
-- **Phase 0 — detection baseline + eval backbone.** Off-the-shelf
-  [Anomalib](https://github.com/openvinotoolkit/anomalib) EfficientAD on one MVTec
-  AD category, with a reusable evaluation backbone. Write-up:
-  [docs/PHASE0_REPORT.md](docs/PHASE0_REPORT.md).
-- **Phase 1 — calibrated, cost-aware, abstaining decision layer.** Cross
+- **Phase 0 — detection baseline + eval backbone. ✅** Off-the-shelf
+  [Anomalib](https://github.com/openvinotoolkit/anomalib) detector on one MVTec AD
+  category, with a reusable evaluation backbone (image AUROC, pixel AUPRO, AUPIMO).
+  Default detector is **PatchCore** (stronger image-level separation; EfficientAD
+  configs retained). Write-up: [docs/PHASE0_REPORT.md](docs/PHASE0_REPORT.md).
+- **Phase 1 — calibrated, cost-aware, abstaining decision layer. ✅** Cross
   (out-of-fold) Venn-Abers calibration → cost-matrix `PASS/FAIL/ESCALATE` →
   risk-coverage, with prevalence (label-shift) correction, a **break-even review-cost**
   analysis, and an honesty guard. **Complete and validated (27/27 tests); no LLM/agent
@@ -30,6 +31,22 @@ cost function and the false-reject rate, **not** detection AUROC.
     matrix** at low prevalence (shipping a defect ≫ a re-inspection). `make decide`
     reports both, with the full anti-cherry-pick sweep.
   - Machinery is independently validated on synthetic separating scores (`make sim`).
+- **Phase 2A — VLM second-look on the ESCALATE bucket (first LLM). ✅ backbone.** Layers a
+  single **`claude-sonnet-4-6` vision** adjudication step on top of the Phase-1 spine,
+  ESCALATE-only, behind a calibrated abstain rule. Heart of the eval: raw accuracy, a
+  **pre-registered error-independence** test vs the detector (`Wilson-lo[P(VLM ok | det
+  wrong)] > 0.50`), bidirectional value (rescue vs escape), an effective-review-cost band,
+  and K-run rule stability. Plain functions around a node-shaped `VLMState` seam (no
+  LangGraph yet — `crop_fn` / `anomaly_map_path` hooks reserved for Phase 2B). Mock smoke
+  is walled off; the real-data headline awaits a hard category. `make vlm`.
+- **Phase 2B — MVTec AD 2 migration + the crop experiment. 🟡 in progress.**
+  - **Stage 0 — pre-AD2 hygiene. ✅** Provenance cleanup (canonical runs, repaired
+    `decisions.csv`); **live model-ID check** — every call served `claude-sonnet-4-6`, no
+    silent downgrade; **token-budget** measured (a powered AD2 VLM run costs < ~$0.50 — not
+    a constraint).
+  - **Stage 1 — anomalib 2.x optional extra + AD2 datamodule + anomaly-map crop instrument.**
+    Next. anomalib 2.x stays a **GPU-host-only optional extra**; the pinned local 1.2 stack
+    and the pure-numpy decision layer are untouched.
 
 ## Quickstart
 
@@ -38,8 +55,9 @@ make install                 # uv sync (creates .venv, installs pinned stack)
 make smoke                   # fast end-to-end sanity run (~10 steps)
 make baseline CATEGORY=screw # full train + eval, writes results/
 make decide                  # Phase-1 adjudication on the latest run
+make vlm RUN=<id> [MOCK=1]   # Phase-2A VLM second-look on the ESCALATE bucket
 make sim                     # SYNTHETIC machinery validation (NOT real-data evidence)
-make test                    # unit tests
+make test                    # unit tests (decision policy + VLM eval, API mocked)
 ```
 
 Results: `results/metrics.csv`, per-run `summary.md`, and Phase-1
@@ -79,8 +97,11 @@ src/aiqs/
   train.py      train EfficientAD on one category
   evaluate.py   evaluate a checkpoint, persist results
   decide.py     Phase-1 cost-aware adjudication over persisted scores
+  vlm/          Phase-2A VLM second-look (abstain pipeline around a VLMState seam)
+  vlm_decide.py Phase-2A entry point (aiqs-vlm)
   simulate_decision.py  synthetic machinery validation (walled off)
-  eval/         evaluation backbone (metrics, persistence, decision policy/calibration)
+  eval/         evaluation backbone (metrics, persistence, decision policy, VLM eval)
+scripts/        local diagnostics (e.g. verify_vlm_local.py — model-id + token pre-flight)
 results/        metrics.csv + per-run summaries + Phase-1 decisions (committed)
-tests/          unit tests for the decision policy / calibration / guard
+tests/          unit tests for the decision policy / calibration / guard / VLM eval
 ```
