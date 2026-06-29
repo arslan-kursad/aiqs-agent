@@ -13,6 +13,11 @@ dist/
 .venv/
 # uv.lock IS committed (reproducibility — see CLAUDE.md). Do not ignore it.
 
+# --- secrets (NEVER commit API keys) ---
+.env
+.env.*
+!.env.example
+
 # --- Datasets & model artifacts (large, regenerable) ---
 # anomalib auto-downloads MVTec AD + imagenette here; we also stage prepared data
 datasets/
