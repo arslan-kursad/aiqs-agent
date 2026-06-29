@@ -52,3 +52,7 @@ scratch_*.py
 # Phase-2A mock VLM smoke artifacts (wiring only, never evidence)
 results/runs/*/mock_vlm_results.csv
 results/runs/*/mock_vlm_summary.md
+
+# Phase-2B anomaly-map export — heavy per-pixel dumps (the crop instrument's input).
+# Only the small manifest + the committed image_scores.csv reference these.
+results/runs/*/anomaly_maps/

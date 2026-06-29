@@ -365,6 +365,42 @@ the headline.
   - **Stage 0 (0.1 + 0.2 + 0.3) COMPLETE.** Hygiene gates green → ready for Prompt A
     (Stage 1: anomalib 2.x GPU-host-only optional extra + MVTec AD 2 datamodule +
     anomaly-map crop), pending user go-ahead and a propose→confirm outline.
+- **2026-06-29** — **Phase-2B Stage 1 — version-dispatch backend + MVTec AD 2 datamodule +
+  anomaly-map CROP INSTRUMENT.** Pure-python core LOCAL-VERIFIED; the anomalib-2.x backend is
+  GPU-host-pending (the Intel-mac cannot install 2.x). User approved (propose→confirm) all
+  three design choices: isolated `_backend_v2` via version dispatch; native `MVTecAD2` +
+  `test_public` (GT) split; core-local / 2.x-GPU-marked split.
+  - **Version dispatch (zero local regression).** `_anomalib_compat.anomalib_major()`;
+    `detector.py`/`data.py` are version-safe seams — NO top-level anomalib import (that crashes
+    under 2.x, where the 1.2 `MVTec` class was removed); they lazily run the 1.2 bodies in-line
+    or delegate to `_detector_v2.py`/`_data_v2.py` when `anomalib.__version__` >= 2. Locally the
+    seam still resolves to v1 (66/66 tests; smoke unaffected).
+  - **MVTec AD 2 (verified 2.x API).** `_data_v2` builds `MVTecAD` (the `MVTec` rename) or
+    `MVTecAD2`; GT comes from the **public-test** split offline (`test_type`) — private/mixed
+    need the eval server, out of scope for our labelled metrics. `_detector_v2` uses the 2.x
+    Engine (no `task=`/`image_metrics=`; metrics via Evaluator/sklearn) and `engine.predict()`
+    -> `ImageBatch` (`.pred_score` / `.gt_label` / `.image_path` / `.anomaly_map`).
+  - **CROP INSTRUMENT (core, detector-free, LOCAL-VERIFIED).** `aiqs/crop.py`
+    `compute_crop(map, image, cfg)` — RELATIVE-TO-MAX peak threshold (a percentile collapses on
+    sparse peaks -> selects the whole frame; learned via a failing test) -> padded, min-size,
+    clamped bbox -> high-res crop. **DIFFUSE is first-class** (flat map by peak/mean, OR peak
+    area > frac -> `crop=None`, full-image fallback — a measured signal for the Stage-3
+    perception-vs-semantic split, not a crash). `aiqs/vlm/crop_fn.make_crop_fn(cfg)` plugs into
+    the EXISTING 2A backend seam (`crop_fn` / `anomaly_map_path`); `cfg.crop.enabled` is the
+    ARM-A(full) / ARM-B(full+crop) toggle, and a diffuse item is byte-identical to ARM-A. Map
+    export: `evaluate._write_anomaly_maps` dumps per-image `.npy` (gitignored) + a manifest. 9
+    new crop tests (peak / diffuse / min-size / border / crop_fn) -> **66/66**.
+  - **DEP FINDING (surfaced, not hacked).** A co-locked `uv` `ad2` extra is INFEASIBLE: the
+    base caps (`torchmetrics<1.5`, `numpy<2`, `lightning<2.5`, `torch==2.2.2`) are mutually
+    exclusive with anomalib >= 2.2 (needs `torchmetrics>=1.8.2`, numpy 2.x, lightning 2.6) —
+    MEASURED with `uv pip compile` (`No solution found ... torchmetrics`). Delivered the GPU-host
+    stack as a SEPARATE `requirements-ad2.txt` (fresh env + `pip install -e . --no-deps`). The
+    cleaner fix — split the detector stack into conflicting `det1`/`ad2` extras with a
+    detector-free base (matches the thesis) — is **deferred to a user decision** (base refactor).
+  - **Pending on the GPU host (not run locally).** Install `requirements-ad2.txt` -> confirm the
+    exact `MVTecAD2(test_type=...)` value + auto-download vs manual; train an AD2 category; run
+    `aiqs-eval` -> image_scores.csv + anomaly maps; then `make decide` for the Stage-2 substrate
+    count (ESCALATE∩good AND n_dw >= ~30).
 
 ## How Phase 1 extends the eval contract
 

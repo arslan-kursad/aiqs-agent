@@ -44,9 +44,14 @@ cost function and the false-reject rate, **not** detection AUROC.
     `decisions.csv`); **live model-ID check** — every call served `claude-sonnet-4-6`, no
     silent downgrade; **token-budget** measured (a powered AD2 VLM run costs < ~$0.50 — not
     a constraint).
-  - **Stage 1 — anomalib 2.x optional extra + AD2 datamodule + anomaly-map crop instrument.**
-    Next. anomalib 2.x stays a **GPU-host-only optional extra**; the pinned local 1.2 stack
-    and the pure-numpy decision layer are untouched.
+  - **Stage 1 — version-dispatch backend + AD2 datamodule + anomaly-map crop instrument. 🟡**
+    Pure-python **crop instrument** (`aiqs/crop.py` + `vlm/crop_fn`: peak→high-res crop, with a
+    first-class *diffuse* fallback) is landed and locally verified (66/66 tests). `detector.py`
+    /`data.py` are version-safe seams that dispatch to an isolated anomalib-2.x backend
+    (`_detector_v2`/`_data_v2`: `MVTecAD2`, `Evaluator`, `ImageBatch` map export) **on a GPU host
+    only** — the pinned local 1.2 stack and pure-numpy decision layer are untouched. The 2.x
+    stack ships as a separate `requirements-ad2.txt` (a co-locked `uv` extra is infeasible —
+    base caps vs anomalib 2.x). AD2 train + map export run next on the GPU host.
 
 ## Quickstart
 

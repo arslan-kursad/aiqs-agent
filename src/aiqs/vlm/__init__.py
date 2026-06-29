@@ -23,6 +23,7 @@ from aiqs.vlm.backend import (
     VLMVerdict,
     parse_verdict,
 )
+from aiqs.vlm.crop_fn import make_crop_fn
 from aiqs.vlm.state import VLMState
 from aiqs.vlm.substrate import SubstrateError, bucket_composition, substrate_guard
 
@@ -35,6 +36,7 @@ __all__ = [
     "confidence_to_p",
     "adjudicate_probability",
     "adjudicate",
+    "make_crop_fn",
     "bucket_composition",
     "substrate_guard",
     "SubstrateError",

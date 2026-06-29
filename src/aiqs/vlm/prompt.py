@@ -1,11 +1,11 @@
 """Prompt + image construction for the second-look.
 
 Kept separate from the backend so the wording is reviewable in one place and the
-full-image-now / crop-later seam is explicit. The crop on the anomaly-map peak is a
-2B addition (``crop_anomaly_region`` is a documented stub here); 2A sends the full
-image only — and NOTE that full-image adjudication is a weaker, different task than
-adjudicating the detector's flagged region, so the headline mechanism comes only from
-the later crop-equipped hard-category run, never from the full-image smoke.
+full-image / crop seam is explicit. The crop on the anomaly-map peak is the Phase-2B
+addition, now IMPLEMENTED in ``aiqs.vlm.crop_fn.make_crop_fn`` (built on ``aiqs.crop``);
+2A sent the full image only — and NOTE that full-image adjudication is a weaker, different
+task than adjudicating the detector's flagged region, so the headline mechanism comes only
+from the later crop-equipped hard-category run, never from the full-image smoke.
 """
 
 from __future__ import annotations
@@ -34,13 +34,7 @@ QUESTION = (
 )
 
 
-def crop_anomaly_region(state, max_edge: int):  # pragma: no cover - 2B stub
-    """STUB (Phase 2B): crop a high-res region around the anomaly-map peak.
-
-    Needs per-pixel anomaly maps, which the current Colab run did not persist (only
-    image-level scores). Map export piggybacks on the future hard-category Colab run.
-    Returns ``(image_block | None, crop_note)``; until implemented, signals full-image-only.
-    """
-    raise NotImplementedError(
-        "crop_anomaly_region is a Phase-2B addition; 2A is full-image-only. "
-        "Persist anomaly maps from Colab for the ESCALATE bucket to enable it.")
+# The crop-on-anomaly-map-peak instrument lives in ``aiqs.vlm.crop_fn.make_crop_fn``
+# (Phase-2B, implemented). It consumes the per-image anomaly maps exported by the
+# detector (``_detector_v2.run_eval_export`` on the GPU host) and produces the second,
+# high-resolution image block for the backend's ``crop_fn`` seam.

@@ -10,12 +10,15 @@ The per-image scores are the bridge to the Phase-1 adjudication layer.
 from __future__ import annotations
 
 import argparse
+import csv
 import warnings
 from pathlib import Path
 
+import numpy as np
 import torch
 from lightning.pytorch import Callback, seed_everything
 
+from aiqs._anomalib_compat import anomalib_major
 from aiqs.config import add_common_args, config_from_args
 from aiqs.data import build_datamodule
 from aiqs.detector import build_eval_engine, build_model, checkpoint_path
@@ -153,34 +156,67 @@ def main() -> None:
             f"`uv run aiqs-train --category {cfg.category}`."
         )
 
-    datamodule = build_datamodule(cfg)
-    collector = ScoreCollector()
     extras: dict = {}
+    maps = None
 
-    # AUPIMO is available in anomalib 1.2.0 but treated as best-effort: if it does
-    # not compute cleanly we fall back to AUROC/AUPRO and log it (per project rule).
-    try:
-        raw = _run_test(cfg, datamodule, ckpt, collector, use_aupimo=True)
-    except Exception as exc:  # noqa: BLE001 - want any failure to trigger fallback
-        extras["aupimo"] = (
-            f"disabled — did not compute cleanly ({type(exc).__name__}: {exc}); "
-            f"logged as a Phase-1 follow-up"
-        )
-        raw = _run_test(cfg, datamodule, ckpt, collector, use_aupimo=False)
+    if anomalib_major() >= 2:
+        # anomalib 2.x (GPU host): metrics via Evaluator + ImageBatch predict, plus the
+        # Phase-2B anomaly-map export. GPU-host-verified — see _detector_v2.py.
+        from aiqs import _detector_v2
 
-    metrics = canonicalize(raw)
+        metrics, score_kwargs, maps = _detector_v2.run_eval_export(cfg, ckpt)
+    else:
+        datamodule = build_datamodule(cfg)
+        collector = ScoreCollector()
+        # AUPIMO is available in anomalib 1.2.0 but treated as best-effort: if it does
+        # not compute cleanly we fall back to AUROC/AUPRO and log it (per project rule).
+        try:
+            raw = _run_test(cfg, datamodule, ckpt, collector, use_aupimo=True)
+        except Exception as exc:  # noqa: BLE001 - want any failure to trigger fallback
+            extras["aupimo"] = (
+                f"disabled — did not compute cleanly ({type(exc).__name__}: {exc}); "
+                f"logged as a Phase-1 follow-up"
+            )
+            raw = _run_test(cfg, datamodule, ckpt, collector, use_aupimo=False)
+        metrics = canonicalize(raw)
+        score_kwargs = collector.as_kwargs()
 
     result = EvalResult(
         run_id=cfg.run_id,
         meta=cfg.as_flat_dict(),
         metrics=metrics,
         extras=extras,
-        **collector.as_kwargs(),
+        **score_kwargs,
     )
 
     config_yaml = Path(args.config).read_text() if Path(args.config).exists() else None
     run_dir = persist(result, cfg.output.results_dir, config_yaml=config_yaml)
+    if maps:
+        _write_anomaly_maps(run_dir, maps)
     print_baseline_summary(result, run_dir)
+
+
+def _write_anomaly_maps(run_dir, maps: dict) -> None:
+    """Persist per-image anomaly maps (.npy) for the Phase-2B crop instrument.
+
+    Heavy per-pixel dumps are gitignored (`results/runs/*/anomaly_maps/`); a small
+    manifest (image_path -> map file) is written so the crop step can pair each map with
+    its original image. The parent-folder name disambiguates same-stem files across
+    defect folders (e.g. several `000.png`).
+    """
+    maps_dir = Path(run_dir) / "anomaly_maps"
+    maps_dir.mkdir(parents=True, exist_ok=True)
+    manifest = []
+    for image_path, arr in maps.items():
+        p = Path(image_path)
+        name = f"{p.parent.name}__{p.stem}.npy"
+        np.save(maps_dir / name, np.asarray(arr, dtype=np.float32))
+        manifest.append((image_path, f"anomaly_maps/{name}"))
+    with open(maps_dir / "manifest.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["image_path", "map_path"])
+        writer.writerows(manifest)
+    print(f"  [maps] wrote {len(manifest)} anomaly maps -> {maps_dir}")
 
 
 if __name__ == "__main__":
