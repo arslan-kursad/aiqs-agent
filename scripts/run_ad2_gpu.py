@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Phase-2B GPU-host runner — MVTec AD 2 detector round, paste-and-run.
+"""Phase-2B GPU-host runner — anomalib-2.x detector round, paste-and-run.
+
+Dataset is config-driven: VisA by default (`configs/patchcore_visa.yaml`, auto-downloads),
+or pass `--config configs/patchcore_ad2.yaml` for MVTec AD 2. `--category` overrides the
+config's category (optional).
 
 WHERE THIS RUNS: a CUDA host (Colab/Kaggle) with the anomalib-2.x env from
 ``requirements-ad2.txt`` + ``pip install -e . --no-deps``. It REFUSES to run on the pinned
@@ -14,9 +18,10 @@ WHAT IT DOES (two modes):
              path work AND does this AD2 category give image-level substrate":
                image_auroc, ESCALATE∩good, n_dw.
 
-    # on the GPU host:
-    python scripts/run_ad2_gpu.py --category sheet_metal --smoke
-    python scripts/run_ad2_gpu.py --category sheet_metal
+    # on the GPU host (VisA, default config):
+    python scripts/run_ad2_gpu.py --smoke               # cheap 2.x API shake-out
+    python scripts/run_ad2_gpu.py                        # full round on the config's category
+    python scripts/run_ad2_gpu.py --category pcb1        # sweep another VisA category
 
 Read image_auroc FIRST: ~0.97 => detector saturated, no substrate (standard-MVTec repeat);
 lower => substrate candidate -> then ESCALATE∩good (>=15 to proceed, >=30 powered) AND n_dw.
@@ -30,7 +35,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-DEFAULT_CONFIG = "configs/patchcore_ad2.yaml"
+DEFAULT_CONFIG = "configs/patchcore_visa.yaml"
 
 
 def _require_anomalib_2() -> None:
@@ -64,7 +69,8 @@ def _image_auroc(results_dir: str) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Phase-2B AD2 GPU-host runner.")
     ap.add_argument("--config", default=DEFAULT_CONFIG)
-    ap.add_argument("--category", default="sheet_metal", help="an AD2 category (not screw/capsule)")
+    ap.add_argument("--category", default=None,
+                    help="override the config's category (optional; e.g. a VisA category)")
     ap.add_argument("--results-dir", default="results")
     ap.add_argument("--smoke", action="store_true", help="cheap 2.x API shake-out, then exit")
     args = ap.parse_args()
@@ -76,14 +82,15 @@ def main() -> int:
         from aiqs.config import load_config
 
         cfg = load_config(args.config)
-        cfg.category = args.category
-        print(f"[smoke] 2.x API shake-out on category={args.category} ...", flush=True)
+        if args.category:
+            cfg.category = args.category
+        print(f"[smoke] 2.x API shake-out on {cfg.dataset.name}/{cfg.category} ...", flush=True)
         print("[smoke] " + _detector_v2.smoke(cfg))
         print("[smoke] PASS — the 2.x path is wired. Re-run without --smoke for the real round.")
         return 0
 
     py = sys.executable
-    base = ["--config", args.config, "--category", args.category]
+    base = ["--config", args.config] + (["--category", args.category] if args.category else [])
     # `python -m` (not the console scripts) so this works with PYTHONPATH=src too, no PATH
     # dependency. 1-3 stream to console (the user watches train/eval/decide live).
     for cmd in ([py, "-m", "aiqs.train", *base],

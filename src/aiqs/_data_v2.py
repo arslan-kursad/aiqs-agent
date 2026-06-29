@@ -42,9 +42,11 @@ def build_datamodule(cfg: Config):
         return _build_mvtec_ad(cfg)
     if name in ("mvtec_ad2", "mvtecad2"):
         return _build_mvtec_ad2(cfg)
+    if name == "visa":
+        return _build_visa(cfg)
     raise ValueError(
-        f"anomalib-2.x backend supports 'mvtec' (MVTecAD) or 'mvtec_ad2' (MVTecAD2); "
-        f"got '{name}'."
+        f"anomalib-2.x backend supports 'mvtec' (MVTecAD), 'mvtec_ad2' (MVTecAD2), or "
+        f"'visa' (Visa); got '{name}'."
     )
 
 
@@ -81,5 +83,23 @@ def _build_mvtec_ad2(cfg: Config):
         num_workers=cfg.dataset.num_workers,
         augmentations=_augmentations(cfg),
         test_type=_AD2_PUBLIC_TEST,   # GT-bearing split (verified: "public", the default)
+        seed=cfg.seed,
+    )
+
+
+def _build_visa(cfg: Config):
+    """VisA — chosen over AD2 because it AUTO-DOWNLOADS from a live public S3 link
+    (verified: ``amazon-visual-anomaly.s3...VisA_20220922.tar``), no form/login. Test split
+    carries GT labels offline (no eval server). 12 categories: candle, capsules, cashew,
+    chewinggum, fryum, macaroni1, macaroni2, pcb1, pcb2, pcb3, pcb4, pipe_fryum."""
+    from anomalib.data import Visa
+
+    return Visa(
+        root=cfg.dataset.root,
+        category=cfg.category,
+        train_batch_size=cfg.dataset.train_batch_size,
+        eval_batch_size=cfg.dataset.eval_batch_size,
+        num_workers=cfg.dataset.num_workers,
+        augmentations=_augmentations(cfg),
         seed=cfg.seed,
     )

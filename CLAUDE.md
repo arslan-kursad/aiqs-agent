@@ -433,6 +433,19 @@ the headline.
   --mock`, surfacing the 3 numbers image_auroc / ESCALATE∩good / n_dw; `aiqs-vlm` rc==2 SubstrateError
   is a VALID "no substrate" outcome). Local-verified what is verifiable here (config parse, runner
   import under 1.2, py_compile, 66/66 hold); the 2.x run itself remains the user's GPU session.
+- **2026-06-29** — **Substrate-hunt dataset: VisA, NOT MVTec AD 2 (user decision).** The first GPU
+  smoke PROVED the 2.x backend is API-correct — anomalib 2.x import, `MVTecAD2` ctor, backbone
+  download, `Engine.fit`, `prepare_data` all ran; it died ONLY on anomalib's dead AD2 download URL
+  (a `mydrive.ch` 404 — the EXACT Phase-0 MVTec failure). Worse, AD2 has NO public HF/Kaggle mirror
+  and the official download is FORM-gated (CC BY-NC-SA registration) -> not scriptable. Switched to
+  **VisA**: anomalib's `Visa` datamodule AUTO-DOWNLOADS from a LIVE public S3 link
+  (`amazon-visual-anomaly.s3.us-west-2.amazonaws.com/VisA_20220922.tar`, verified in source), no
+  form, and its test split carries GT offline (no eval server) -> sweep its 12 categories (candle,
+  capsules, cashew, chewinggum, fryum, macaroni1/2, pcb1-4, pipe_fryum) cheaply for image-level
+  substrate. **Same substrate gate** (image-AUROC first; the pixel-vs-image trap applies to VisA
+  too). AD2 stays the high-fidelity fallback IF VisA yields nothing and the form/upload cost is
+  accepted. Added `_data_v2._build_visa`, `configs/patchcore_visa.yaml`; made
+  `scripts/run_ad2_gpu.py` config-driven (VisA default, `--category` optional override).
 
 ## How Phase 1 extends the eval contract
 
