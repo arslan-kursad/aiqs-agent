@@ -9,16 +9,22 @@
 #
 # (Same story for numpy<2 and lightning<2.5.) The base exists to keep the anomalib-1.2
 # stack installable on the Intel-mac (no x86_64-macOS torch wheel past 2.2.2); anomalib 2.x
-# only ever runs on a CUDA/arm64 GPU host. So install THIS on the GPU host, in a fresh env:
+# only ever runs on a CUDA/arm64 GPU host. So install THIS on the GPU host:
 #
-#   python -m venv .venv-ad2 && . .venv-ad2/bin/activate
-#   pip install torch torchvision        # the CUDA build matching the host
-#   pip install -r requirements-ad2.txt
-#   pip install -e . --no-deps           # add the `aiqs` package WITHOUT the pinned base
+#   pip install -r requirements-ad2.txt        # anomalib 2.x (pulls its own torch)
+#   export PYTHONPATH="$PWD/src"               # add the `aiqs` package on the path
 #
-# `--no-deps` is load-bearing: it stops pip from re-pulling the base's torch==2.2.2 / numpy<2
-# pins. The detector code (detector.py/data.py) dispatches to `_detector_v2`/`_data_v2`
-# automatically once anomalib 2.x is the installed version (see aiqs/_anomalib_compat.py).
+# Use PYTHONPATH, NOT `pip install -e .`: the base `requires-python = ">=3.11,<3.12"` cap
+# (a local-3.11-stack artifact) makes `pip install -e .` REJECT a 3.12 GPU host (e.g. Colab
+# is 3.12: "Package 'aiqs' requires a different Python"). PYTHONPATH sidesteps both that cap
+# and pip's build step. The detector code (detector.py/data.py) dispatches to
+# `_detector_v2`/`_data_v2` automatically once anomalib 2.x is the installed version.
+#
+# On Colab/Kaggle (each `!` line is a fresh shell — use the magics so state persists):
+#   %cd /content/aiqs-agent
+#   %env PYTHONPATH=/content/aiqs-agent/src
+#   !pip install -r requirements-ad2.txt
+#   !python scripts/run_ad2_gpu.py --category sheet_metal --smoke
 #
 # CLEANER LONG-TERM FIX (deferred — a base refactor, propose→confirm): make the detector
 # stack itself an extra (base = the detector-free numpy/sklearn decision+VLM layer; `det1`
