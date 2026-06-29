@@ -1,0 +1,41 @@
+# Phase-2B: PatchCore on MVTec AD 2 (anomalib 2.x — GPU host ONLY).
+#
+# Runs only where anomalib >= 2 is installed (the `requirements-ad2.txt` env on a CUDA
+# host). detector.py/data.py dispatch to _detector_v2/_data_v2 automatically by version.
+# MVTecAD2 auto-downloads into dataset.root on first use (verified against the 2.x source).
+#
+# category MUST be an AD2 category (NOT screw/capsule). Options:
+#   can  fabric  fruit_jelly  rice  sheet_metal  vial  wall_plugs  walnuts
+# Try 2-3 and read image-AUROC FIRST: ~0.97 => detector saturated (no substrate, like
+# standard MVTec); lower => substrate candidate -> then check ESCALATE∩good AND n_dw.
+
+seed: 42
+category: sheet_metal
+
+dataset:
+  name: mvtec_ad2
+  root: datasets/MVTec_AD_2
+  image_size: [256, 256]
+  train_batch_size: 8
+  eval_batch_size: 16
+  num_workers: 2
+
+model:
+  name: patchcore
+  backbone: wide_resnet50_2
+  layers: [layer2, layer3]
+  coreset_sampling_ratio: 0.1
+  num_neighbors: 9
+
+training:
+  accelerator: auto
+  devices: 1
+
+# Anomaly maps are exported regardless (the Stage-1 deliverable). `crop.enabled` only
+# toggles whether the VLM second-look USES the crop (the Stage-3 ARM-B); the substrate
+# round does not run the crop arm, so leave it off here.
+crop:
+  enabled: false
+  peak_fraction: 0.5
+  padding: 0.25
+  min_size: 64

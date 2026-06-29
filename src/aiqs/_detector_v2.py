@@ -105,6 +105,47 @@ def run_eval_export(cfg: Config, ckpt: Path):
     return metrics, score_kwargs, maps
 
 
+def smoke(cfg) -> str:
+    """Cheap 2.x API SHAKE-OUT before any full run: 1 train batch + 1 predict batch.
+
+    The point (per the GPU-round guard in CLAUDE.md): fail in SECONDS on an API mismatch,
+    not 40 minutes into a real train. Exercises the whole path that the real run uses —
+    ``build_datamodule`` (incl. the AD2 auto-download), ``build_model``, ``engine.fit``,
+    ``engine.predict`` -> ``ImageBatch`` — and asserts the batch carries the fields the
+    export/crop instrument depends on. Raises LOUDLY (no silent fallback) on any drift.
+    """
+    from anomalib.engine import Engine
+
+    from aiqs.data import build_datamodule
+
+    dm = build_datamodule(cfg)
+    model = build_model(cfg)
+    eng = Engine(
+        default_root_dir=str(Path(cfg.output.models_dir) / cfg.run_id),
+        accelerator=cfg.training.accelerator,
+        devices=cfg.training.devices,
+        logger=False,
+        max_epochs=1,
+        limit_train_batches=1,
+        limit_val_batches=1,
+        limit_predict_batches=1,
+    )
+    eng.fit(model=model, datamodule=dm)
+    preds = list(eng.predict(model=model, datamodule=dm, return_predictions=True) or [])
+    if not preds:
+        raise RuntimeError("smoke: engine.predict returned no batches.")
+    batch = preds[0]
+    missing = [f for f in ("pred_score", "image_path", "anomaly_map") if not hasattr(batch, f)]
+    if missing:
+        raise RuntimeError(
+            f"smoke: ImageBatch is missing {missing} — anomalib 2.x API drift. Fix the field "
+            f"names in _detector_v2.run_eval_export before the real run."
+        )
+    amap = np.asarray(_to_np(getattr(batch, "anomaly_map")[0])).squeeze()
+    return ("smoke OK — build_datamodule + build_model + fit + predict ran; ImageBatch carries "
+            f"pred_score / image_path / anomaly_map (map shape {amap.shape}).")
+
+
 def _image_metrics(scores, labels) -> dict:
     out = {"pixel_auroc": None, "pixel_aupro": None, "pixel_aupimo": None,
            "image_auroc": None, "image_f1score": None}

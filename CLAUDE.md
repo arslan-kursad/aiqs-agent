@@ -420,6 +420,19 @@ the headline.
   image-level uncertainty, NOT "it's AD2"** — AD2's difficulty is PIXEL-level; PatchCore can give
   low pixel-AUPRO but high image-AUROC -> empty ESCALATE bucket again (standard-MVTec repeat). Read
   **image-AUROC FIRST** (~0.97 => no substrate; lower => candidate), THEN ESCALATE∩good AND n_dw.
+- **2026-06-29** — **GPU-round de-risked locally: 2.x API SOURCE-verified + a paste-and-run runner.**
+  Turned guard (1) — "smoke first, expect 1-2 API errors" — into a DOCUMENT shake-out: verified
+  `_data_v2`/`_detector_v2` against the anomalib 2.x SOURCE (mvtecad2.py, patchcore lightning_model.py,
+  Engine). They MATCH: `MVTecAD2(augmentations=..., test_type="public" [the default], AUTO-DOWNLOADS)`;
+  `Patchcore(backbone/layers/coreset_sampling_ratio/num_neighbors)` (no `task`); `Engine(**kwargs ->
+  Lightning Trainer)`; `predict() -> ImageBatch`. So no AD2 `prepare_data` parallel is needed, and the
+  expected smoke breakage is now low. Added: `_detector_v2.smoke(cfg)` (1 train + 1 predict batch;
+  asserts `ImageBatch.pred_score/image_path/anomaly_map` — fail in seconds, not 40 min);
+  `configs/patchcore_ad2.yaml` (AD2 category list, crop off for the substrate round);
+  `scripts/run_ad2_gpu.py` (REFUSES anomalib<2; `--smoke` then full train->eval->decide->`aiqs-vlm
+  --mock`, surfacing the 3 numbers image_auroc / ESCALATE∩good / n_dw; `aiqs-vlm` rc==2 SubstrateError
+  is a VALID "no substrate" outcome). Local-verified what is verifiable here (config parse, runner
+  import under 1.2, py_compile, 66/66 hold); the 2.x run itself remains the user's GPU session.
 
 ## How Phase 1 extends the eval contract
 

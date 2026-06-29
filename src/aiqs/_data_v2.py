@@ -14,10 +14,18 @@ split ships masks/labels offline; ``test_private`` / ``test_private_mixed`` GT l
 the MVTec eval server. So our labelled metrics (ESCALATE∩good, n_dw, VLM correctness) run on
 the public-test split. ``test_type`` selects it.
 
-TO VERIFY on the GPU host (do not guess silently — log the actual values):
-  * the exact ``MVTecAD2(test_type=...)`` accepted value for the GT-bearing public split;
-  * whether ``MVTecAD2`` auto-downloads, or needs a prepared local path (CC BY-NC-SA;
-    likely a Kaggle/registered download) -> if manual, add an AD2 ``prepare_data`` parallel.
+VERIFIED against the anomalib 2.x source (open-edge-platform/anomalib, mvtecad2.py):
+  * ``MVTecAD2.__init__(root="./datasets/MVTec_AD_2", category="sheet_metal", train_batch_size,
+    eval_batch_size, num_workers, train/val/test_augmentations, augmentations, test_type=
+    TestType.PUBLIC, seed)`` — ``test_type`` accepts the string ``"public"`` (and is the
+    default); ``augmentations`` is the correct param name.
+  * It **auto-downloads** (``prepare_data`` -> ``download_and_extract``) when
+    ``<root>/<category>`` is absent — NO manual prepare_data parallel needed.
+  * AD2 categories differ from the original MVTec (e.g. ``sheet_metal``, ``walnuts``,
+    ``fruit_jelly``, ``can``, ``vial``, ``fabric``, ``rice``, ``wall_plugs``) — set a valid
+    AD2 category in the config, not ``screw``/``capsule``.
+Still GPU-host-verified END TO END (the resolve happens there); the API names above are
+source-checked, not runtime-confirmed.
 """
 
 from __future__ import annotations
@@ -72,6 +80,6 @@ def _build_mvtec_ad2(cfg: Config):
         eval_batch_size=cfg.dataset.eval_batch_size,
         num_workers=cfg.dataset.num_workers,
         augmentations=_augmentations(cfg),
-        test_type=_AD2_PUBLIC_TEST,   # GT-bearing split (TO VERIFY: exact value on GPU host)
+        test_type=_AD2_PUBLIC_TEST,   # GT-bearing split (verified: "public", the default)
         seed=cfg.seed,
     )
