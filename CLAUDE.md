@@ -198,9 +198,13 @@ component. Layers a vision-LLM adjudication step ON TOP of the Phase-1 spine, ES
       mock output is WALLED OFF (`mock_vlm_*`, gitignored, loud banner — never touches the
       real `summary.md`), exactly like the synthetic validation. screw = smoke, NOT headline.
 
-**Next (real 2A headline):** a HARD category (capsule/hazelnut/AD2) where good parts get
-borderline scores → Colab train + **anomaly-map export** (crop input) → `make decide` to
-verify ESCALATE∩good ≈ 30-40 → run the VLM there with the crop path enabled.
+**Next (real 2A headline) — Phase-2B path.** Standard MVTec saturates (~0.976 image-AUROC
+on BOTH screw AND capsule → ESCALATE bucket too small / `n_dw` underpowered; see 2026-06-29
+log), so the headline moves to **MVTec AD 2** (reality-gap, detection genuinely hard):
+anomalib 2.x as a GPU-host-only optional extra → train a hard AD2 category → **anomaly-map
+export + crop** → `make decide` to verify ESCALATE∩good AND `n_dw` ≥ ~30 → two-arm
+full-vs-crop VLM experiment (Stage 3). capsule/screw = wiring/substrate probes only, NOT
+the headline.
 
 ## Decision log
 
@@ -318,6 +322,27 @@ verify ESCALATE∩good ≈ 30-40 → run the VLM there with the crop path enable
   silently swallowing an unrestored `memory_bank` (→ degenerate ~0.5 AUROC). Regression
   test (`tests/test_evaluate_load.py`): a state_dict with non-tensor values does not raise
   and tensors load; an omitted buffer surfaces in missing_keys + warns. 57/57 tests.
+- **2026-06-29** — **Phase-2B Stage-0.3 provenance hygiene (pre-AD2 cleanup, no API/Colab).**
+  Audited the committed results state before the AD2 migration; found it dirtier than the
+  roadmap assumed and fixed it locally. (1) `results/decisions.csv` carried a leftover git
+  **merge marker** (`<<<<<<< HEAD` fused into the header) + 7 junk rows + a phantom leading
+  column — committed and propagated across several commits (predates f0ef3d6). The writer is
+  `pd.DataFrame([row]).to_csv(index=False)` (21 cols), so the next `aiqs-decide` would have
+  mangled it further. Rebuilt clean: 21-col header, deduped to the two authoritative decide
+  rows (screw 130823Z + canonical capsule 142659Z); pandas round-trip verified (2×21, no
+  `Unnamed` column). (2) **Three near-identical capsule run dirs** (140858Z full, 141717Z
+  partial/stray, 142659Z full) with **identical `image_scores`**, and 142659Z re-decided 5×
+  → 5 redundant `decisions.csv` rows. Picked **142659Z as canonical** (the dir the VLM was
+  attempted on); `git rm`'d 140858Z + 141717Z. (3) **The 2A VLM capsule "headline" is NOT a
+  committed artifact**: 142659Z `vlm_results.csv` was **1 byte** (a lone newline); the only
+  real VLM output in-repo is the WALLED-OFF screw mock (`mock_vlm_*`, gitignored — the wall
+  holds). The cited capsule VLM numbers (16/19 rescue, 2/5 escape) came from the Colab fork
+  **discarded in 2ebbdeb** → NOT authoritative. Removed the empty stub. Capsule's role is now
+  honestly **substrate-probe only** (ESCALATE∩good=19, n_dw=5 → underpowered independence
+  test); the real VLM headline is **PENDING on a substrate-verified AD2 category** (Stage 3).
+  Stage-0.1 (live model-ID log) + 0.2 (token budget from Langfuse) remain TODO — both need an
+  API key / Langfuse trace **absent on this local host**, so they belong to the planned Kaggle
+  session, not this cleanup. No code touched; 57/57 tests unaffected.
 
 ## How Phase 1 extends the eval contract
 
