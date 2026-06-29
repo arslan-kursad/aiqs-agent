@@ -343,6 +343,28 @@ the headline.
   Stage-0.1 (live model-ID log) + 0.2 (token budget from Langfuse) remain TODO — both need an
   API key / Langfuse trace **absent on this local host**, so they belong to the planned Kaggle
   session, not this cleanup. No code touched; 57/57 tests unaffected.
+- **2026-06-29** — **Phase-2B Stage 0.1 + 0.2 DONE — live model-ID + token budget, run
+  LOCALLY (no Kaggle).** The VLM is an API call, not GPU (per the 2A note), so this ran on
+  the Intel-mac host with an `ANTHROPIC_API_KEY` in a local `.env` (gitignored, commit
+  `ee2e8d4`). New `scripts/verify_vlm_local.py` — a pre-flight that REUSES the production
+  `AnthropicVLMBackend` content construction (no fork) and makes 8 REAL `claude-sonnet-4-6`
+  calls on local screw images.
+  - **0.1 GREEN.** All 8 calls served `claude-sonnet-4-6`, matching the `MODEL` const in
+    `vlm/backend.py`. **No silent 3.5-downgrade** — the fork's failure mode is cleared. The
+    script STOPS LOUD (exit 2) if the served model ≠ expected (pre-registered guard, not a
+    silent work-around).
+  - **0.2.** Per call ≈ **639 input** (constant — fixed 512px image + fixed prompt) +
+    **~112 output** (95–129) ≈ **751 tokens**. At claude-sonnet-4-6 pricing ($3/$15 per 1M
+    in/out): per call ≈ **$0.0036**; 8-call pre-flight ≈ **$0.03**. AD2 full-image
+    projection: bucket=40 ≈ **$0.14**, bucket=80 ≈ **$0.29**; crop adds a 2nd image block
+    (+~500 img-tokens/call) → a powered two-arm run stays **< ~$0.50**. **Token budget is
+    NOT a constraint on the AD2 run.** Measured on screw (capsule images are Colab-only
+    here); per-call cost is image-size + prompt driven → category-independent, transfers as
+    a representative estimate. Crop's exact increment is measured in Stage 1 once the crop
+    instrument exists.
+  - **Stage 0 (0.1 + 0.2 + 0.3) COMPLETE.** Hygiene gates green → ready for Prompt A
+    (Stage 1: anomalib 2.x GPU-host-only optional extra + MVTec AD 2 datamodule +
+    anomaly-map crop), pending user go-ahead and a propose→confirm outline.
 
 ## How Phase 1 extends the eval contract
 
