@@ -401,6 +401,25 @@ the headline.
     exact `MVTecAD2(test_type=...)` value + auto-download vs manual; train an AD2 category; run
     `aiqs-eval` -> image_scores.csv + anomaly maps; then `make decide` for the Stage-2 substrate
     count (ESCALATE∩good AND n_dw >= ~30).
+- **2026-06-29** — **Det-stack split DEFERRED until after the GPU-host AD2 round (user decision).**
+  Rationale (cause->effect): the `image_scores.csv` + anomaly-map FILE interface already gives the
+  decoupling the experiment needs — the detector world (anomalib 2.x, GPU) and the value world
+  (pinned stack, local) talk by FILE, not import (the Phase-0 design). The torch-free-base refactor
+  would FORMALISE that decoupling in the dependency graph but yields ZERO new capability for Stages
+  2-3; it also risks regressing the working base (66/66) right before the critical experiment for
+  no evidence-gain, and its value is contingent on AD2 being the right path (if Stage 2 yields no
+  substrate or Stage 3 is null, the polished 2.x detector path may be unneeded). The Stage-1
+  dep-conflict IS the proof the refactor is the correct END-STATE (the value-layer caps clash with
+  anomalib 2.x because the two still share one dependency world) — but the medicine is taken AFTER
+  the experiment: a capstone if positive, or a necessity if the two-stack workaround creates real
+  GPU-host friction. **Two tactical guards for the GPU round** (the `_data_v2`/`_detector_v2`
+  modules are WRITTEN BUT NEVER RUN — 2.x API match unverified): (1) **SMOKE FIRST** — one tiny run
+  to shake out the 2.x API (`MVTecAD2` ctor args, PatchCore 2.x args, `predict()`->`ImageBatch`
+  `.anomaly_map` export) BEFORE any full train; expect 1-2 API mismatches, catch them in a 5-min
+  smoke not a 40-min train (same discipline as the capsule VLM smoke). (2) **SUBSTRATE GATE =
+  image-level uncertainty, NOT "it's AD2"** — AD2's difficulty is PIXEL-level; PatchCore can give
+  low pixel-AUPRO but high image-AUROC -> empty ESCALATE bucket again (standard-MVTec repeat). Read
+  **image-AUROC FIRST** (~0.97 => no substrate; lower => candidate), THEN ESCALATE∩good AND n_dw.
 
 ## How Phase 1 extends the eval contract
 
