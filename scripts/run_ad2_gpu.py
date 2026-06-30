@@ -66,6 +66,40 @@ def _image_auroc(results_dir: str) -> str:
     return f"{df[col].iloc[-1]:.4f}" if col is not None and len(df) else "n/a"
 
 
+def _sweep(cats: list[str], args) -> int:
+    """Per category: train + eval + substrate report (aiqs-vlm --mock); print a compact table
+    of image_auroc / ESCALATE∩good / n_dw so we can pick a POWERED Stage-3 ground.
+
+    (The VisA tar holds all categories, so only the first category triggers the download.)
+    """
+    py = sys.executable
+    rows = []
+    for c in cats:
+        b = ["--config", args.config, "--category", c]
+        if any(_run(cmd).returncode != 0 for cmd in
+               ([py, "-m", "aiqs.train", *b], [py, "-m", "aiqs.evaluate", *b])):
+            rows.append((c, "train/eval FAILED", "-", "-"))
+            continue
+        out = _run([py, "-m", "aiqs.vlm_decide", "--mock"], capture=True)
+        o = (out.stdout or "") + (out.stderr or "")
+        good = re.search(r"good=(\d+)", o) or re.search(r"ESCALATE∩good = (\d+)", o)
+        ndw = re.search(r"n_dw=(\d+)", o)
+        rows.append((c, _image_auroc(args.results_dir),
+                     good.group(1) if good else "?",
+                     ndw.group(1) if ndw else "<15(guard)"))
+
+    print("\n" + "=" * 64)
+    print(f"  SUBSTRATE SWEEP   config={args.config}")
+    print("  " + "-" * 60)
+    print(f"  {'category':<14}{'image_auroc':>12}{'ESC_good':>11}{'n_dw':>11}")
+    for c, auroc, good, ndw in rows:
+        print(f"  {c:<14}{auroc:>12}{good:>11}{ndw:>11}")
+    print("  " + "-" * 60)
+    print("  gate: ESC_good AND n_dw >= ~30 => powered; >= 15 => direction-only")
+    print("=" * 64)
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Phase-2B AD2 GPU-host runner.")
     ap.add_argument("--config", default=DEFAULT_CONFIG)
@@ -73,9 +107,14 @@ def main() -> int:
                     help="override the config's category (optional; e.g. a VisA category)")
     ap.add_argument("--results-dir", default="results")
     ap.add_argument("--smoke", action="store_true", help="cheap 2.x API shake-out, then exit")
+    ap.add_argument("--sweep", default=None,
+                    help="comma-separated categories: train+eval+substrate each, print a table")
     args = ap.parse_args()
 
     _require_anomalib_2()
+
+    if args.sweep:
+        return _sweep([c.strip() for c in args.sweep.split(",") if c.strip()], args)
 
     if args.smoke:
         from aiqs import _detector_v2
