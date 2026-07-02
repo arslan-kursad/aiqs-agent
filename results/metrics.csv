@@ -10,3 +10,4 @@ timestamp,run_id,seed,category,dataset,model,model_size,image_size,max_steps,acc
 20260702T020900Z,patchcore-wide_resnet50_2_visa-macaroni2,42,macaroni2,visa,patchcore,wide_resnet50_2,256x256,70000,auto,,,,0.6460000000000001,0.6
 20260702T024050Z,patchcore-wide_resnet50_2_visa-pcb1,42,pcb1,visa,patchcore,wide_resnet50_2,256x256,70000,auto,,,,0.936,0.84
 20260702T031400Z,patchcore-wide_resnet50_2_visa-pcb2,42,pcb2,visa,patchcore,wide_resnet50_2,256x256,70000,auto,,,,0.9276,0.85
+20260702T170356Z,patchcore-wide_resnet50_2_visa-capsules,42,capsules,visa,patchcore,wide_resnet50_2,256x256,70000,auto,,,,0.7386666666666667,0.7222222222222222
