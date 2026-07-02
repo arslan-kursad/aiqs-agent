@@ -168,6 +168,17 @@ class AnthropicVLMBackend:
                      "cache_control": {"type": "ephemeral"}}],  # cache the stable prefix
             messages=[{"role": "user", "content": content}],
         )
+        # Pre-registered guard (the silent-3.5-downgrade lesson): the SERVED model must be
+        # the expected one, on EVERY call. STOP LOUD, never silently continue on a substitute.
+        served = getattr(msg, "model", None)
+        if served != self.model:
+            raise RuntimeError(
+                f"SERVED MODEL MISMATCH: expected {self.model!r}, API served {served!r}. "
+                "Stopping — results on a substitute model are not valid evidence.")
+        u = getattr(msg, "usage", None)
+        if u is not None:  # Stage-3 token-cost line (incl. the crop's 2nd-image increment)
+            state.tokens_in = getattr(u, "input_tokens", None)
+            state.tokens_out = getattr(u, "output_tokens", None)
         return "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
 
     def _with_langfuse(self, client, state: VLMState):

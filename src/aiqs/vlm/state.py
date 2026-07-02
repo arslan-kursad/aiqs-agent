@@ -38,3 +38,5 @@ class VLMState:
     final_decision: Decision | None = None  # PASS/FAIL = VLM auto-decide; ESCALATE = human
     abstained: bool | None = None            # True => routed to a human reviewer
     trace_id: str | None = None              # Langfuse trace id, when instrumented
+    tokens_in: int | None = None             # API usage (None for mock) — Stage-3 cost line
+    tokens_out: int | None = None

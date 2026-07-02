@@ -70,6 +70,10 @@ sim:
 vlm:
 	$(UV) aiqs-vlm $(if $(RUN),--run $(RUN),) $(if $(MOCK),--mock,)
 
+# Phase-2B Stage-3 two-arm full-vs-crop experiment (needs the run's anomaly maps).
+vlm-crop:
+	$(UV) aiqs-vlm-crop $(if $(RUN),--run $(RUN),) $(if $(MOCK),--mock,)
+
 # Unit tests for the decision policy / calibration / guard (dev group).
 test:
 	uv run --group dev pytest -q

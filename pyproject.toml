@@ -49,6 +49,7 @@ aiqs-eval = "aiqs.evaluate:main"
 aiqs-decide = "aiqs.decide:main"
 aiqs-sim-decision = "aiqs.simulate_decision:main"
 aiqs-vlm = "aiqs.vlm_decide:main"
+aiqs-vlm-crop = "aiqs.vlm_crop:main"
 
 # Dev-only tooling. pytest is a test dependency (not shipped/imported by the core);
 # kept out of [project.dependencies] so it never enters the runtime resolve. Pure

@@ -467,6 +467,42 @@ the headline.
   layer (native 11% / realistic 13% cheaper than the tuned threshold). Bonus finding: two
   sessions, two hosts (Colab/Kaggle), same seed -> identical candle numbers (reproducibility).
   Stage-3 ground selection + Prompt-B design outline are the next propose→confirm.
+- **2026-07-02** — **Phase-2B Stage 3 BUILT (mock-verified, 78/78) — two-arm full-vs-crop
+  experiment + PRE-REGISTERED escape-classification rules, committed BEFORE the real run.**
+  User approved ground=**capsules** (0.739, 57/54 — "weak but signalful", the thesis regime;
+  macaroni2 rejected: 174/200 escalated ≈ VLM-on-everything, hollows out ESCALATE-only) with
+  macaroni1 as the CONDITIONAL second ground, plus three confirm-conditions, all implemented:
+  1. **PRE-REGISTERED labeling rules** (`vlm/reasoning_rules.py`, frozen 2026-07-02 pre-run —
+     the anti-p-hacking condition): classification unit = (run,item) ARM-A escape, judged by
+     its ARM-B pair. Priority: (i) **PERCEPTION** := ARM-B verdict flips to "defect" (objective,
+     no text matching); (ii) **SEMANTIC** := ARM-B stays "clean" AND reasoning matches a frozen
+     NORMALIZING regex family (artifact attributions: reflection/glare/lighting/illumination/
+     shadow/dust/debris/smudge/artifact; "normal variation|appearance|surface|texture|feature";
+     "within normal|acceptable|tolerance"; "acceptable|expected|typical + variation|appearance|
+     feature|surface"; cosmetic; harmless — word-boundary guarded, "abnormal" does NOT match);
+     (iii) **UNCLASSIFIED** := everything else, own rate reported; >0.30 of eligible escapes =>
+     pre-registered verdict "rule-based labeling insufficient, human read required" — rules are
+     NOT widened post hoc. DIFFUSE items (no crop; ARM-B byte-identical to A) are excluded from
+     the denominator and counted separately.
+  2. **Arm independence in code**: every call is a fresh single-turn `messages.create` (no
+     shared conversation -> no anchoring); per-arm fresh state objects, same item order, same
+     per-run seed schedule (tested). Plus a **served-model STOP guard** now in the backend
+     itself: any call served != claude-sonnet-4-6 raises (the silent-downgrade lesson), and
+     usage tokens are captured per call (the crop's 2nd-image increment is measured, not
+     estimated).
+  3. **macaroni1 TRIGGER**: run macaroni1 ONLY after the capsules result — positive => second
+     envelope point (validation); null => different-regime test ("regime or VLM?"). Never in
+     parallel (2x budget, and designing exp-2 before learning from exp-1). Code is
+     ground-parametric (`--run`), runs are single-ground.
+  Also: **ARM-A doubles as a free 2A replication** on new ground — reported as a descriptive
+  line (good-rescue rate, defect-escape rate, confidence-separation AUC ~0.5 = does not
+  separate); the discarded-fork numbers are never quoted as baseline. New: `eval/crop_eval.py`
+  (paired escape comparison w/ fixed-by-crop|broken-by-crop discordants, stable-vs-flip
+  [stable := escaped in ALL K runs — invisible to K-agreement], token-cost line),
+  `vlm_crop.py` (`aiqs-vlm-crop`, `make vlm-crop`), 12 new tests. Honest budget correction
+  surfaced pre-approval: bucket=109 x 2 arms x K=5 ≈ 1090 calls ≈ **$4-5** (the Stage-0
+  "<$0.50" was single-pass). Real run happens on Kaggle (maps live there; entry point + guards
+  are in-repo — no fork).
 
 ## How Phase 1 extends the eval contract
 
