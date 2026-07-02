@@ -503,6 +503,23 @@ the headline.
   surfaced pre-approval: bucket=109 x 2 arms x K=5 ≈ 1090 calls ≈ **$4-5** (the Stage-0
   "<$0.50" was single-pass). Real run happens on Kaggle (maps live there; entry point + guards
   are in-repo — no fork).
+- **2026-07-02** — **Stage-3 dry-run #1 VOID (crop never engaged) -> crop instrument FIXED against
+  real maps.** The first real capsules two-arm run ($~5, commit `06c762f` record) came back
+  escape A 0.515 = B 0.515, **134/134 escapes diffuse-excluded** — the crop_fn produced a crop for
+  ZERO items, so ARM-B was byte-identical to ARM-A: an INSTRUMENT failure, not a null result (the
+  hypothesis was never tested). Diagnosis on a 20-map sample pushed from Kaggle
+  (`capsules_maps_sample.tgz`): anomalib-2.x post-processor maps are normalized with a HIGH FLOOR
+  (min~0, max~0.4, mean~0.25) -> the raw `peak/mean < 2.0` flat-map guard declared 19/20 maps
+  diffuse. My "zero-background + sharp peak" assumption was synthetic-test-shaped, not real-map
+  -shaped. FIX (instrument repair, NOT outcome tuning — the frozen pre-registered artifacts are
+  the reasoning rules + Wilson threshold, and no VLM output feeds this): threshold = max(top-1%
+  quantile of the normalized map [adapts to high-floor maps], `peak_fraction` rel-to-max floor
+  [guards sparse maps]); diffuse = GEOMETRIC — the selected region's raw BBOX > `diffuse_area_frac`
+  of the frame (scattered/plateau peaks -> crop ≈ full image ≈ no look-closer value). Dropped
+  `diffuse_peak_to_mean` (meaningless on normalized maps); added `peak_top_frac=0.01`. Validated
+  EMPIRICALLY on the 20 real maps: **19/20 crop (mostly focal bboxes), 1/20 genuinely diffuse**
+  (was 1/20 crop). 78/78 tests. The $5 lesson institutionalised: dry-run the instrument against
+  REAL exported maps before spending API budget — a mock smoke validates wiring, not thresholds.
 
 ## How Phase 1 extends the eval contract
 

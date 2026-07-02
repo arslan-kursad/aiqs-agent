@@ -53,10 +53,10 @@ def _mask_bbox(mask: np.ndarray) -> tuple[int, int, int, int]:
 def compute_crop(anomaly_map: np.ndarray, image: "PILImage.Image", cfg) -> CropResult:
     """Crop ``image`` to the anomaly-map peak region, or flag the map as diffuse.
 
-    ``cfg`` is duck-typed (a ``config.CropConfig``): ``peak_fraction``, ``padding``,
-    ``min_size``, ``diffuse_area_frac``, ``diffuse_peak_to_mean``. ``anomaly_map`` is a 2-D
-    array of any scale; ``image`` is the full-resolution PIL image (the map is usually at the
-    detector's working resolution and is scaled up to image pixels here).
+    ``cfg`` is duck-typed (a ``config.CropConfig``): ``peak_top_frac``, ``peak_fraction``,
+    ``padding``, ``min_size``, ``diffuse_area_frac``. ``anomaly_map`` is a 2-D array of any
+    scale (raw or post-processor-normalized); ``image`` is the full-resolution PIL image
+    (the map is usually at the detector's working resolution and is scaled up here).
     """
     a = np.asarray(anomaly_map, dtype=np.float64)
     if a.ndim != 2 or a.size == 0 or not np.isfinite(a).any():
@@ -67,27 +67,29 @@ def compute_crop(anomaly_map: np.ndarray, image: "PILImage.Image", cfg) -> CropR
     w_img, h_img = image.size
     sx, sy = w_img / w_map, h_img / h_map
 
-    # Diffuse check 1 — a flat map has a low peak-to-mean ratio (scale-invariant on raw).
-    amin, amax, amean = float(a.min()), float(a.max()), float(a.mean())
-    peak_to_mean = (amax + _EPS) / (abs(amean) + _EPS)
-    if amax - amin < _EPS or peak_to_mean < cfg.diffuse_peak_to_mean:
-        return CropResult(None, None, None, True, f"flat-map(peak/mean={peak_to_mean:.2f})")
+    amin, amax = float(a.min()), float(a.max())
+    if amax - amin < _EPS:             # degenerate: constant map carries no location signal
+        return CropResult(None, None, None, True, "flat-map(constant)")
 
-    # Peak region = pixels at/above a fraction of the (normalized) max. A relative-to-max
-    # threshold localises both sharp/sparse peaks and broad ones; a percentile threshold
-    # silently fails on sparse peaks (the percentile collapses to ~0 -> selects everything).
+    # Peak region = the map's own top pixels. Threshold = max(top-quantile, rel-to-max floor):
+    # the QUANTILE adapts to real detector maps, which are post-processor-normalized with a
+    # HIGH FLOOR (e.g. PatchCore/anomalib-2.x capsules: min~0, max~0.4, mean~0.25 — a raw
+    # peak/mean test wrongly calls every such map flat, the Stage-3 dry-run lesson); the
+    # REL-TO-MAX floor guards sparse maps where a low quantile collapses to ~0 and would
+    # select everything (the original failing-test lesson).
     m = (a - amin) / (amax - amin + _EPS)
-    mask = m >= cfg.peak_fraction
+    thr = max(float(np.quantile(m, 1.0 - cfg.peak_top_frac)), cfg.peak_fraction)
+    mask = m >= thr
     if not mask.any():                 # degenerate -> fall back to the single argmax
         mask = m >= m.max()
 
-    # Diffuse check 2 — the "peak" should be focal, not most of the frame.
-    area_frac = float(mask.mean())
-    if area_frac > cfg.diffuse_area_frac:
-        return CropResult(None, None, None, True, f"diffuse-region(area={area_frac:.2f})")
-
-    # Bbox of the peak region, map -> image coords.
+    # Diffuse check — geometric, on the SELECTED region's bounding box: if the peak pixels
+    # span most of the frame (scattered or plateau-wide), the "crop" would be ~the full
+    # image and carries no look-closer value -> first-class diffuse outcome.
     r0, r1, c0, c1 = _mask_bbox(mask)
+    bbox_frac = ((r1 - r0) * (c1 - c0)) / float(h_map * w_map)
+    if bbox_frac > cfg.diffuse_area_frac:
+        return CropResult(None, None, None, True, f"diffuse-region(bbox={bbox_frac:.2f})")
     left, right = c0 * sx, c1 * sx
     top, bottom = r0 * sy, r1 * sy
 

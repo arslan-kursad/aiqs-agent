@@ -67,11 +67,11 @@ class CropConfig:
     Stage-3 two-arm experiment. All thresholds are detector-free knobs tuned offline.
     """
     enabled: bool = False
-    peak_fraction: float = 0.5            # peak region = map pixels >= this frac of the (normalized) max
+    peak_top_frac: float = 0.01           # peak candidates = top this fraction of map pixels
+    peak_fraction: float = 0.5            # floor on the normalized threshold (guards sparse maps)
     padding: float = 0.25                 # bbox padding as a fraction of the bbox size
     min_size: int = 64                    # minimum crop side, in ORIGINAL-image pixels
-    diffuse_area_frac: float = 0.5        # peak region over this frac of the frame -> diffuse
-    diffuse_peak_to_mean: float = 2.0     # map max/mean below this -> flat map -> diffuse
+    diffuse_area_frac: float = 0.5        # peak-region BBOX over this frac of the frame -> diffuse
 
 
 @dataclass
