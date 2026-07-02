@@ -446,6 +446,27 @@ the headline.
   too). AD2 stays the high-fidelity fallback IF VisA yields nothing and the form/upload cost is
   accepted. Added `_data_v2._build_visa`, `configs/patchcore_visa.yaml`; made
   `scripts/run_ad2_gpu.py` config-driven (VisA default, `--category` optional override).
+- **2026-07-02** — **Phase-2B Stage 2 GATE PASSED — VisA substrate sweep (Kaggle GPU, commit
+  `3417b20`).** First the 2.x path validated END-TO-END on real hardware: the VisA smoke ran with
+  ZERO API errors (source-verification held), then candle full round reproduced across two
+  sessions (39/28/11). The user moved GPU work Colab→Kaggle (Colab VM recycling); sweep of 6
+  categories pushed `image_scores.csv` per run, table recomputed LOCALLY (detector-free, own
+  calibration + pinned "detector wrong"):
+  | category | image-AUROC | bucket | ESC∩good | n_dw |
+  |---|---|---|---|---|
+  | candle | 0.972 | 39 | 28 | 11 |
+  | **capsules** | **0.739** | **109** | **57** | **54** |
+  | **macaroni1** | **0.815** | **138** | **83** | **45** |
+  | macaroni2 | 0.646 | 174 | 92 | 80 |
+  | pcb1 | 0.936 | 65 | 35 | 26 |
+  | pcb2 | 0.928 | 74 | 49 | 29 |
+  **THREE categories pass the pre-registered gate (ESC∩good AND n_dw >= 30): capsules, macaroni1,
+  macaroni2.** The pixel-vs-image trap did NOT materialise on VisA — image-level detection is
+  genuinely hard here (the reality-gap substrate AD2 was meant to provide, obtained without the
+  form-gated download). candle's Phase-1 decide was also the first REAL positive for the decision
+  layer (native 11% / realistic 13% cheaper than the tuned threshold). Bonus finding: two
+  sessions, two hosts (Colab/Kaggle), same seed -> identical candle numbers (reproducibility).
+  Stage-3 ground selection + Prompt-B design outline are the next propose→confirm.
 
 ## How Phase 1 extends the eval contract
 
