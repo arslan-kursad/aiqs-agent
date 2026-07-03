@@ -106,13 +106,18 @@ class AnthropicVLMBackend:
 
     def __init__(self, *, model: str = MODEL, max_tokens: int = 512,
                  temperature: float = 0.0, max_edge: int = 512,
-                 crop_fn=None, api_key: str | None = None):
+                 crop_fn=None, api_key: str | None = None, max_retries: int = 8):
         self.model = model
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.max_edge = max_edge
         self.crop_fn = crop_fn
         self._api_key = api_key  # None => SDK reads ANTHROPIC_API_KEY from env
+        # A Stage-3 run is ~1000+ sequential calls; a single transient 429/5xx/529
+        # (overloaded) that exhausts the SDK's default 2 retries would abort the whole
+        # (paid) experiment. Raise the ceiling — the SDK does exponential backoff+jitter,
+        # so a brief overload is ridden out per-call rather than crashing the run.
+        self._max_retries = max_retries
         self._client = None
 
     # -- prompt construction (text part is import-light; image part needs PIL) ------ #
@@ -120,7 +125,7 @@ class AnthropicVLMBackend:
         if self._client is None:
             from anthropic import Anthropic
 
-            self._client = Anthropic(api_key=self._api_key)
+            self._client = Anthropic(api_key=self._api_key, max_retries=self._max_retries)
         return self._client
 
     def _encode_image(self, path: str) -> dict:
