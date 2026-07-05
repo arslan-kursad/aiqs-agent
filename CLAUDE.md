@@ -520,6 +520,31 @@ the headline.
   EMPIRICALLY on the 20 real maps: **19/20 crop (mostly focal bboxes), 1/20 genuinely diffuse**
   (was 1/20 crop). 78/78 tests. The $5 lesson institutionalised: dry-run the instrument against
   REAL exported maps before spending API budget — a mock smoke validates wiring, not thresholds.
+- **2026-07-05** — **Stage-3 HAIKU REHEARSAL COMPLETE (Kaggle, $1.77, commit `71910cc`) — pipeline
+  fully validated end-to-end with real money; a striking model-tier finding on the side.**
+  Fresh capsules detector round (4 identical dup dirs — user re-ran the cell; newest 181237Z is
+  the ground) -> two-arm run with `--model claude-haiku-4-5` (REHEARSAL namespace; the locked
+  headline model claude-sonnet-4-6 is untouched, summary.md untouched).
+  - **Engineering: every protection layer fired correctly in production.** 1090/1090 calls
+    checkpointed; 5 parse failures fell back LOUD to unsure without crashing the run (the
+    deterministic-malformed scenario is real — it happened); crop payload confirmed in-band
+    (tokens/call A 809 -> B 1353, the +544 second image block); diffuse 2/109 (matches the mock
+    gate); cost $1.77 vs the ~$1.7 estimate; model-namespaced artifacts kept the canonical run
+    clean. The $5-loss failure class is closed.
+  - **Haiku result (REHEARSAL-grade evidence, NOT the locked headline):** full-image Haiku is a
+    RUBBER STAMP — verdict "clean" on 545/545 ARM-A calls (rescue 1.00 AND escape 1.00; accuracy
+    = the bucket's good-rate). Crop barely moves it: escape 1.000 -> 0.962; of 250 eligible
+    A-escapes, **perception=5 (2%), SEMANTIC=235 (94%)**, unclassified=10 (incl. the 5 parse
+    fallbacks; rate 0.04 => labeling ADEQUATE — the pre-registered rules worked). Escapes are
+    100% stable-wrong (52/52) -> K-run agreement is NOT an abstain signal here; confidence AUC
+    0.50 -> not a signal either (2A observation replicated). The formal independence rule says
+    "independent 5/5" in BOTH arms — but that is the all-clean bias being right exactly where
+    the detector over-rejects (the rescue side); with escape=1.0 it is value-asymmetric, not a
+    usable verdict. **For the haiku tier, the crop/perception hypothesis is REFUTED: the failure
+    is semantic** (it sees the flagged region and calls it normal variation/artifact).
+  - **Program position:** the sonnet-4-6 headline run is now maximally de-risked (~$5, one
+    command, resume-safe). Rehearsal prediction to test: if sonnet's escapes are ALSO
+    semantic-dominated, the 2B lever is prompt/anchor design, not better pixels.
 
 ## How Phase 1 extends the eval contract
 

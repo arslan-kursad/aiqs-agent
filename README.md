@@ -1,112 +1,125 @@
 # AIQS-Agent
 
-**Agentic Adjudication Layer for Industrial Visual Quality Inspection.**
+**An agentic adjudication layer for industrial visual quality inspection** — cost-aware,
+calibrated, *abstaining* decisions layered on top of an off-the-shelf anomaly detector,
+with a VLM second-look on exactly the items the policy cannot decide.
 
-An agentic decision + reasoning layer that sits **on top of** an off-the-shelf
-anomaly detector and makes its outputs production-trustworthy. The value is in the
-**decision layer** — cost-aware, calibrated, *abstaining* decisions with auditable
-reasoning traces — not in the detector (a solved commodity). We optimize a business
-cost function and the false-reject rate, **not** detection AUROC.
+> **Thesis.** In industrial visual inspection the detector is a commodity; the value is in
+> the **decision layer**. We optimize a business cost function and the false-reject
+> (overkill) rate — not detection AUROC — and we measure every claim against a tuned
+> no-layer baseline, with pre-registered criteria and honest nulls.
 
-> Detailed north star, constraints, and architecture live in [CLAUDE.md](CLAUDE.md).
+📄 Deep dives: [Architecture](docs/ARCHITECTURE.md) ·
+[Experiment log & evidence](docs/EXPERIMENTS.md) ·
+[Phase-0 report](docs/PHASE0_REPORT.md) ·
+[Project memory / decision log](CLAUDE.md)
 
-## Status
+---
 
-- **Phase 0 — detection baseline + eval backbone. ✅** Off-the-shelf
-  [Anomalib](https://github.com/openvinotoolkit/anomalib) detector on one MVTec AD
-  category, with a reusable evaluation backbone (image AUROC, pixel AUPRO, AUPIMO).
-  Default detector is **PatchCore** (stronger image-level separation; EfficientAD
-  configs retained). Write-up: [docs/PHASE0_REPORT.md](docs/PHASE0_REPORT.md).
-- **Phase 1 — calibrated, cost-aware, abstaining decision layer. ✅** Cross
-  (out-of-fold) Venn-Abers calibration → cost-matrix `PASS/FAIL/ESCALATE` →
-  risk-coverage, with prevalence (label-shift) correction, a **break-even review-cost**
-  analysis, and an honesty guard. **Complete and validated (27/27 tests); no LLM/agent
-  yet.** The layer reports an **operating envelope**, not a universal win:
-  - **Weak detector** (600-step EfficientAD, AUROC 0.559): the guard refuses a
-    false-positive headline — honest null, no separable signal.
-  - **Strong detector** (PatchCore on Colab, AUROC 0.976): abstention cuts overkill
-    (0.29→0.16) and drives escapes to 0, but at review cost = 1 the escalation overhead
-    exceeds the savings, so a tuned threshold wins on *total* cost. Cost-aware abstention
-    wins below a **break-even review cost**, and under a **realistic escape-dominant cost
-    matrix** at low prevalence (shipping a defect ≫ a re-inspection). `make decide`
-    reports both, with the full anti-cherry-pick sweep.
-  - Machinery is independently validated on synthetic separating scores (`make sim`).
-- **Phase 2A — VLM second-look on the ESCALATE bucket (first LLM). ✅ backbone.** Layers a
-  single **`claude-sonnet-4-6` vision** adjudication step on top of the Phase-1 spine,
-  ESCALATE-only, behind a calibrated abstain rule. Heart of the eval: raw accuracy, a
-  **pre-registered error-independence** test vs the detector (`Wilson-lo[P(VLM ok | det
-  wrong)] > 0.50`), bidirectional value (rescue vs escape), an effective-review-cost band,
-  and K-run rule stability. Plain functions around a node-shaped `VLMState` seam (no
-  LangGraph yet — `crop_fn` / `anomaly_map_path` hooks reserved for Phase 2B). Mock smoke
-  is walled off; the real-data headline awaits a hard category. `make vlm`.
-- **Phase 2B — MVTec AD 2 migration + the crop experiment. 🟡 in progress.**
-  - **Stage 0 — pre-AD2 hygiene. ✅** Provenance cleanup (canonical runs, repaired
-    `decisions.csv`); **live model-ID check** — every call served `claude-sonnet-4-6`, no
-    silent downgrade; **token-budget** measured (a powered AD2 VLM run costs < ~$0.50 — not
-    a constraint).
-  - **Stage 1 — version-dispatch backend + AD2 datamodule + anomaly-map crop instrument. 🟡**
-    Pure-python **crop instrument** (`aiqs/crop.py` + `vlm/crop_fn`: peak→high-res crop, with a
-    first-class *diffuse* fallback) is landed and locally verified (66/66 tests). `detector.py`
-    /`data.py` are version-safe seams that dispatch to an isolated anomalib-2.x backend
-    (`_detector_v2`/`_data_v2`: `MVTecAD2`, `Evaluator`, `ImageBatch` map export) **on a GPU host
-    only** — the pinned local 1.2 stack and pure-numpy decision layer are untouched. The 2.x
-    stack ships as a separate `requirements-ad2.txt` (a co-locked `uv` extra is infeasible —
-    base caps vs anomalib 2.x). AD2 train + map export run next on the GPU host.
+## How it works
+
+```mermaid
+flowchart LR
+    subgraph GPU["Detector world (GPU host, anomalib 2.x)"]
+        D[PatchCore<br/>off-the-shelf] -->|image scores +<br/>anomaly maps| F[(file interface<br/>image_scores.csv + .npy)]
+    end
+    subgraph LOCAL["Value world (pinned local stack, pure numpy/sklearn)"]
+        F --> C[Cross Venn-Abers<br/>calibration]
+        C --> P{Cost-matrix policy<br/>expected-cost argmin}
+        P -->|p low| PASS[PASS]
+        P -->|p high| FAIL[FAIL]
+        P -->|borderline| E[ESCALATE bucket]
+        E --> V[VLM second-look<br/>claude-sonnet-4-6 vision<br/>full image + anomaly-map crop]
+        V -->|confident| AUTO[auto PASS / FAIL]
+        V -->|unsure| H[human review]
+    end
+```
+
+The two worlds talk **by file, not by import**: the detector runs on a GPU host
+(anomalib 2.x), the decision layer runs anywhere (no torch). A version-dispatched seam
+keeps one codebase working against both stacks.
+
+## Status at a glance
+
+| Phase | What | Status |
+|---|---|---|
+| 0 | Detection baseline + eval backbone (PatchCore, image/pixel metrics) | ✅ complete |
+| 1 | Calibrated, cost-aware, abstaining decision layer + operating envelope | ✅ complete — **first real win on VisA candle: 11–13% cheaper than a tuned threshold** |
+| 2A | VLM second-look backbone (ESCALATE-only, pre-registered independence test) | ✅ complete (mock-tested, live model-ID verified) |
+| 2B | Hard-substrate hunt + **two-arm full-vs-crop experiment** | 🟡 in progress — substrate found (VisA), instrument validated, **haiku rehearsal done**, sonnet headline run pending |
+
+## Key findings so far
+
+- **Operating envelope (Phase 1).** Cost-aware abstention beats a tuned threshold when
+  review is cheap, the detector is genuinely uncertain, or escapes are cost-dominant —
+  and the layer *tells you which regime you are in*. On a saturated detector it honestly
+  reports that a threshold suffices; on VisA `candle` it delivered a real 11%/13% cost win.
+- **Substrate matters and must be measured.** Standard MVTec saturates (~0.97 image-AUROC
+  → empty ESCALATE bucket). The VisA sweep found three powered grounds
+  (`capsules` 0.739, `macaroni1` 0.815, `macaroni2` 0.646).
+- **Haiku rehearsal (first real two-arm data, $1.77).** A cheap-tier VLM second-look is a
+  **rubber stamp**: "clean" on 545/545 full-image calls; the anomaly-map crop fixes only
+  2% of escapes while **94% classify as SEMANTIC** under pre-registered rules — the model
+  *sees* the flagged region and calls it normal. Escapes are 100% stable-wrong and
+  self-reported confidence carries no signal (AUC 0.50). Rehearsal-grade evidence; the
+  locked-model (claude-sonnet-4-6) headline run is next.
 
 ## Quickstart
 
 ```bash
-make install                 # uv sync (creates .venv, installs pinned stack)
-make smoke                   # fast end-to-end sanity run (~10 steps)
-make baseline CATEGORY=screw # full train + eval, writes results/
+make install                 # uv sync (pinned local stack)
+make smoke                   # fast end-to-end sanity run
+make baseline CATEGORY=screw # train + eval, writes results/
 make decide                  # Phase-1 adjudication on the latest run
-make vlm RUN=<id> [MOCK=1]   # Phase-2A VLM second-look on the ESCALATE bucket
-make sim                     # SYNTHETIC machinery validation (NOT real-data evidence)
-make test                    # unit tests (decision policy + VLM eval, API mocked)
+make vlm RUN=<id> MOCK=1     # Phase-2A VLM second-look (mock = no API)
+make vlm-crop RUN=<id>       # Phase-2B two-arm full-vs-crop experiment
+make sim                     # SYNTHETIC machinery validation (walled off)
+make test                    # 83 unit tests (all API calls mocked)
 ```
 
-Results: `results/metrics.csv`, per-run `summary.md`, and Phase-1
-`risk_coverage{,_target}.png` + `decision_scores.csv` + `results/decisions.csv`.
+GPU detector rounds (anomalib 2.x, VisA/MVTec-AD2) run on a CUDA host:
+see [`requirements-ad2.txt`](requirements-ad2.txt) and
+[`scripts/run_ad2_gpu.py`](scripts/run_ad2_gpu.py) (`--smoke`, `--sweep`, single-round).
 
-## Stack & host notes
+## Integrity by construction
 
-Pinned for an **Intel (x86_64) macOS** host (CPU-only): `anomalib 1.2.0`,
-`torch 2.2.2`. See [CLAUDE.md](CLAUDE.md) for why.
+The credibility of a null result is this project's core asset. Enforced in code, not policy:
 
-### GPU / arm64 upgrade path (turnkey real baseline)
+- **Pre-registered criteria** — the error-independence rule (Wilson-lo > 0.50) and the
+  escape-classification rules (PERCEPTION/SEMANTIC regex family) were frozen and committed
+  *before* the data existed; an UNCLASSIFIED ceiling declares the labeling itself
+  inadequate rather than widening rules post hoc.
+- **Substrate guard** — refuses to spend API budget on a bucket too small to measure.
+- **Served-model stop** — every API call verifies the served model; a silent downgrade
+  aborts the run.
+- **Walled-off mocks & synthetic data** — `mock_*` artifacts are gitignored and can never
+  touch real evidence files.
+- **Checkpoint/resume** — every paid API call is flushed to disk; a crash loses at most
+  one call and a re-run never re-bills.
+- **Honest nulls in the log** — the weak-detector null, the saturated-substrate finding,
+  and the voided first dry-run are all committed, with root causes.
 
-The Phase-1 decision layer is solid; what it needs is a detector with real
-per-image separation. On a CUDA or Apple-Silicon host:
-
-1. Drop the version caps in `pyproject.toml` and move to **anomalib 2.x + current
-   torch** (the caps exist only because this Intel-mac has no newer-torch wheel).
-2. Optionally switch the dataset to **MVTec AD 2** (supported in anomalib 2.x).
-3. Train at the **full step budget** (`configs/default.yaml`, 70k steps) — the 600-step
-   CPU budget is the root cause of the weak image-AUROC, not the category.
-4. `make baseline` → `make decide`. With a separating detector the risk-coverage
-   headline (overkill ↓, cost ↓ vs naive at matched escape) materialises — exactly as
-   `make sim` shows on synthetic scores.
-
-If EfficientAD's **image-level** AUROC lags, swap in **PatchCore** (also off-the-shelf
-in Anomalib) — it tends to be stronger at image-level separation, which is what this
-decision-layer demo needs. The decision layer is detector-agnostic: it only consumes
-`image_scores.csv`.
-
-## Layout
+## Repository layout
 
 ```
-configs/        YAML configs (category is configurable)
+configs/          YAML configs (dataset/category/model/crop — all CLI-overridable)
 src/aiqs/
-  config.py     typed config + CLI overrides
-  data.py       MVTec AD datamodule
-  train.py      train EfficientAD on one category
-  evaluate.py   evaluate a checkpoint, persist results
-  decide.py     Phase-1 cost-aware adjudication over persisted scores
-  vlm/          Phase-2A VLM second-look (abstain pipeline around a VLMState seam)
-  vlm_decide.py Phase-2A entry point (aiqs-vlm)
-  simulate_decision.py  synthetic machinery validation (walled off)
-  eval/         evaluation backbone (metrics, persistence, decision policy, VLM eval)
-scripts/        local diagnostics (e.g. verify_vlm_local.py — model-id + token pre-flight)
-results/        metrics.csv + per-run summaries + Phase-1 decisions (committed)
-tests/          unit tests for the decision policy / calibration / guard / VLM eval
+  detector.py     version-dispatched detector seam (anomalib 1.2 local / 2.x GPU)
+  data.py         datamodules: MVTec (1.2) · MVTecAD/AD2/VisA (2.x)
+  crop.py         anomaly-map peak → high-res crop instrument (diffuse-aware)
+  decide.py       Phase-1 calibration + cost policy + operating-envelope report
+  vlm/            Phase-2 VLM second-look (backend, abstain rule, pre-registered rules)
+  vlm_crop.py     Phase-2B two-arm experiment runner (checkpoint/resume)
+  eval/           metrics, persistence, decision + VLM + two-arm evaluation
+scripts/          GPU runner (run_ad2_gpu.py) · local diagnostics (verify_vlm_local.py)
+results/          committed evidence: metrics.csv, decisions.csv, per-run summaries + plots
+tests/            83 tests — decision policy, calibration, crop, two-arm, guards (API mocked)
+docs/             architecture & experiment documentation
 ```
+
+## Stack
+
+Local (pinned, Intel-mac CPU): `anomalib 1.2 · torch 2.2.2 · numpy<2` — the decision/VLM
+layer itself is pure numpy/sklearn + the Anthropic API. GPU host: `anomalib 2.x` via a
+separate requirements file (the two stacks are mutually exclusive by dependency —
+measured, documented in [CLAUDE.md](CLAUDE.md)).
