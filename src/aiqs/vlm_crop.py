@@ -22,7 +22,9 @@ but are EXCLUDED from the perception/semantic classification (pre-registered).
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import time
 from pathlib import Path
 
 import numpy as np
@@ -33,17 +35,90 @@ from aiqs.crop import compute_crop
 from aiqs.decide import LOCKED_COST, _find_run_dir, _load_scores
 from aiqs.eval import crop_eval as ce
 from aiqs.eval import vlm_eval as ve
-from aiqs.eval.decision import cross_venn_abers, decide
+from aiqs.eval.decision import Decision, cross_venn_abers, decide
+from aiqs.vlm.abstain import adjudicate_probability, confidence_to_p
 from aiqs.vlm.adjudicate import adjudicate
-from aiqs.vlm.backend import AnthropicVLMBackend, MockVLMBackend
+from aiqs.vlm.backend import AnthropicVLMBackend, MockVLMBackend, VLMParseError
 from aiqs.vlm.crop_fn import make_crop_fn
 from aiqs.vlm.state import VLMState
 from aiqs.vlm.substrate import SubstrateError, bucket_composition, substrate_guard
 from aiqs.vlm_decide import build_bucket_states
 
 RESULTS_CSV = "vlm_crop_results.csv"
+CHECKPOINT = "vlm_crop_checkpoint.jsonl"
 MOCK_PREFIX = "mock_"
 MOCK_BANNER = ("# ⚠️ MOCK two-arm smoke — wiring only, NOT real-data evidence\n\n")
+PROGRESS_EVERY = 25
+
+
+# --------------------------------------------------------------------------- #
+# Checkpoint / resume — the money-protection layer.
+#
+# Every completed (arm, run, item) call is appended to a JSONL checkpoint the moment it
+# returns, so ANY mid-run failure (529 storm past the retry budget, a parse error, a
+# served-model stop, a dead kernel) loses AT MOST ONE call. Re-running the same command
+# RESUMES: completed calls are reconstructed from disk and never re-billed. The file is
+# also the raw audit trail (verdict + reasoning + tokens per call).
+# --------------------------------------------------------------------------- #
+
+def _ckpt_path(run_dir: Path, mock: bool) -> Path:
+    return run_dir / ((MOCK_PREFIX if mock else "") + CHECKPOINT)
+
+
+def load_checkpoint(path: Path) -> dict:
+    done: dict = {}
+    if path.exists():
+        with open(path) as f:
+            for line in f:
+                if line.strip():
+                    rec = json.loads(line)
+                    done[(rec["arm"], rec["run"], rec["idx"])] = rec
+    return done
+
+
+def _record(arm: str, r: int, i: int, s: VLMState) -> dict:
+    return {"arm": arm, "run": r, "idx": i, "image_path": s.image_path,
+            "vlm_verdict": s.vlm_verdict, "vlm_conf": s.vlm_conf,
+            "vlm_reasoning": s.vlm_reasoning, "p_vlm": s.p_vlm,
+            "final_decision": s.final_decision.value, "abstained": s.abstained,
+            "tokens_in": s.tokens_in, "tokens_out": s.tokens_out}
+
+
+def _restore(rec: dict, template: VLMState, with_map: bool) -> VLMState:
+    if rec["image_path"] != template.image_path:
+        raise RuntimeError(
+            f"CHECKPOINT MISMATCH at (arm={rec['arm']}, run={rec['run']}, idx={rec['idx']}): "
+            f"checkpoint has {rec['image_path']}, bucket has {template.image_path}. The "
+            "checkpoint belongs to a DIFFERENT bucket — delete it only if you know why.")
+    s = _fresh(template, with_map=with_map)
+    s.vlm_verdict, s.vlm_conf = rec["vlm_verdict"], rec["vlm_conf"]
+    s.vlm_reasoning, s.p_vlm = rec["vlm_reasoning"], rec["p_vlm"]
+    s.final_decision = Decision(rec["final_decision"])
+    s.abstained = rec["abstained"]
+    s.tokens_in, s.tokens_out = rec.get("tokens_in"), rec.get("tokens_out")
+    return s
+
+
+def _adjudicate_loud_fallback(state: VLMState, backend, cost) -> tuple[VLMState, bool]:
+    """One call with a bounded parse-failure fallback (LOUD, never silent, never blocking).
+
+    temperature=0 means a malformed response can be DETERMINISTIC for an item — a hard
+    raise would make the run un-completable (resume hits the same wall forever). So: retry
+    once; if still malformed, mark the item ``unsure`` with a PARSE_FAILURE-prefixed
+    reasoning (-> abstain/ESCALATE, the conservative outcome; classified UNCLASSIFIED),
+    print a warning, and report the count. Returns (state, parse_failed)."""
+    for attempt in (1, 2):
+        try:
+            return adjudicate(state, backend, cost, lam=0.0), False
+        except VLMParseError as e:
+            last = e
+            print(f"  [warn] parse failure (attempt {attempt}/2) on {state.image_path}")
+    state.vlm_verdict, state.vlm_conf = "unsure", 0.0
+    state.vlm_reasoning = f"PARSE_FAILURE: {str(last)[:200]}"
+    state.p_vlm = confidence_to_p("unsure", 0.0)
+    state.final_decision = adjudicate_probability(state.p_vlm, cost)
+    state.abstained = state.final_decision is Decision.ESCALATE
+    return state, True
 
 
 def load_map_index(run_dir: Path) -> dict:
@@ -118,17 +193,49 @@ def run_two_arm(run_dir: Path, *, k: int, mock: bool, seed: int, folds: int,
         return (AnthropicVLMBackend(crop_fn=make_crop_fn(crop_cfg)) if arm == "B"
                 else AnthropicVLMBackend())
 
+    ckpt = _ckpt_path(run_dir, mock)
+    done = load_checkpoint(ckpt)
+    total = 2 * k * len(template)
+    print(f"  [plan] {len(template)} items x 2 arms x K={k} = {total} calls; "
+          f"resumed from checkpoint: {len(done)}; new calls this session: "
+          f"{total - len(done)}  (checkpoint: {ckpt.name})")
+
+    t0 = time.time()
+    parse_failures = 0
+    calls_new = 0
+
     def run_arm(arm: str) -> list[list]:
+        nonlocal parse_failures, calls_new
         with_map = arm == "B"
         per_run = []
-        for r in range(k):
-            backend = backend_for(arm, r)
-            per_run.append([adjudicate(_fresh(s, with_map=with_map), backend,
-                                       LOCKED_COST, lam=0.0) for s in template])
+        with open(ckpt, "a") as f:
+            for r in range(k):
+                backend = backend_for(arm, r)
+                states = []
+                for i, s in enumerate(template):
+                    key = (arm, r, i)
+                    if key in done:                     # already paid for — restore, skip
+                        states.append(_restore(done[key], s, with_map))
+                        continue
+                    state, failed = _adjudicate_loud_fallback(
+                        _fresh(s, with_map=with_map), backend, LOCKED_COST)
+                    parse_failures += failed
+                    f.write(json.dumps(_record(arm, r, i, state)) + "\n")
+                    f.flush()                            # a crash now loses ZERO calls
+                    states.append(state)
+                    calls_new += 1
+                    if calls_new % PROGRESS_EVERY == 0:
+                        el = (time.time() - t0) / 60
+                        print(f"  [{arm} run {r}] {calls_new}/{total - len(done)} new calls "
+                              f"| {el:.1f} min elapsed", flush=True)
+                per_run.append(states)
         return per_run
 
     states_a = run_arm("A")
     states_b = run_arm("B")
+    if parse_failures:
+        print(f"  [warn] {parse_failures} call(s) fell back to unsure after repeated parse "
+              "failures (marked PARSE_FAILURE in reasoning/results — inspect them).")
 
     result = ce.evaluate_two_arm(
         states_a, states_b, bucket_scores, bucket_labels, det_call_bucket, LOCKED_COST,

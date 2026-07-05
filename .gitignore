@@ -49,9 +49,8 @@ scratch_*.py
 .vscode/
 *.swp
 
-# Phase-2A mock VLM smoke artifacts (wiring only, never evidence)
-results/runs/*/mock_vlm_results.csv
-results/runs/*/mock_vlm_summary.md
+# Mock VLM smoke artifacts (wiring only, never evidence) — ALL mock_* files are walled off
+results/runs/*/mock_*
 
 # Phase-2B anomaly-map export — heavy per-pixel dumps (the crop instrument's input).
 # Only the small manifest + the committed image_scores.csv reference these.

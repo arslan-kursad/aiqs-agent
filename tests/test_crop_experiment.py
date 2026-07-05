@@ -173,14 +173,19 @@ def synthetic_run(tmp_path):
     return tmp_path, run_dir
 
 
-def test_two_arm_mock_end_to_end(synthetic_run):
+def _run(synthetic_run, **kw):
     from aiqs.vlm_crop import run_two_arm
 
     repo_root, run_dir = synthetic_run
-    res, comp, states_a, states_b = run_two_arm(
-        run_dir, k=2, mock=True, seed=42, folds=5, token_cost=0.0,
-        lambda_grid=[0.0, 1.0], repo_root=repo_root, max_items=None,
-        crop_cfg=CropConfig())
+    defaults = dict(k=2, mock=True, seed=42, folds=5, token_cost=0.0,
+                    lambda_grid=[0.0, 1.0], repo_root=repo_root, max_items=None,
+                    crop_cfg=CropConfig())
+    defaults.update(kw)
+    return run_two_arm(run_dir, **defaults)
+
+
+def test_two_arm_mock_end_to_end(synthetic_run):
+    res, comp, states_a, states_b = _run(synthetic_run)
     # arm independence: separate objects, A has no map, B has maps; same item order.
     assert all(s.anomaly_map_path is None for s in states_a[0])
     assert all(s.anomaly_map_path is not None for s in states_b[0])
@@ -191,3 +196,62 @@ def test_two_arm_mock_end_to_end(synthetic_run):
     assert res.arm_a.k_runs == 2 and res.arm_b.k_runs == 2
     assert 0 <= res.paired["escape_rate_a_mean"] <= 1
     assert comp["escalate_good"] >= 15
+
+
+# --------------------------------------------------------------------------- #
+# Checkpoint / resume + loud parse fallback (the money-protection layer)
+# --------------------------------------------------------------------------- #
+
+def test_checkpoint_resume_never_rebills(synthetic_run, monkeypatch):
+    import aiqs.vlm_crop as vc
+    from aiqs.vlm.backend import MockVLMBackend
+
+    calls = {"n": 0}
+
+    class CountingMock(MockVLMBackend):
+        def __call__(self, state):
+            calls["n"] += 1
+            return super().__call__(state)
+
+    monkeypatch.setattr(vc, "MockVLMBackend", CountingMock)
+    res1, comp, a1, b1 = _run(synthetic_run)
+    first = calls["n"]
+    assert first > 0
+
+    # Second identical invocation must be FULLY resumed: zero new backend calls,
+    # identical paired numbers (reconstructed from the checkpoint, not re-billed).
+    calls["n"] = 0
+    res2, _, a2, b2 = _run(synthetic_run)
+    assert calls["n"] == 0
+    assert res2.paired == res1.paired
+    assert [s.vlm_verdict for s in a2[0]] == [s.vlm_verdict for s in a1[0]]
+
+
+def test_parse_failure_falls_back_loud_not_blocking(synthetic_run, monkeypatch):
+    import aiqs.vlm_crop as vc
+    from aiqs.vlm.backend import VLMParseError
+
+    class RaisingMock:
+        def __init__(self, *a, **kw): ...
+        def __call__(self, state):
+            raise VLMParseError("malformed response")
+
+    monkeypatch.setattr(vc, "MockVLMBackend", RaisingMock)
+    res, comp, states_a, states_b = _run(synthetic_run, k=1)
+    s = states_a[0][0]
+    assert s.vlm_verdict == "unsure" and s.vlm_reasoning.startswith("PARSE_FAILURE")
+    assert s.abstained is True                     # conservative outcome: human review
+
+
+def test_checkpoint_mismatch_refuses(synthetic_run):
+    import json as js
+    from aiqs.vlm_crop import _ckpt_path
+
+    _run(synthetic_run)                            # writes a real checkpoint
+    _, run_dir = synthetic_run
+    ckpt = _ckpt_path(run_dir, mock=True)
+    lines = ckpt.read_text().strip().split("\n")
+    rec = js.loads(lines[0]); rec["image_path"] = "/somewhere/else.png"
+    ckpt.write_text(js.dumps(rec) + "\n" + "\n".join(lines[1:]) + "\n")
+    with pytest.raises(RuntimeError, match="CHECKPOINT MISMATCH"):
+        _run(synthetic_run)
