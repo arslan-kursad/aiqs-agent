@@ -1,0 +1,40 @@
+# Phase-2B substrate hunt: PatchCore on VisA (anomalib 2.x — GPU host ONLY).
+#
+# VisA over MVTec AD 2 because it AUTO-DOWNLOADS from a live public S3 link (no form/login),
+# so we can sweep categories cheaply. Same substrate gate as AD2: read image-AUROC FIRST
+# (~0.97 => detector saturated, NO substrate); lower => candidate -> ESCALATE∩good AND n_dw.
+#
+# category MUST be a VisA category (12):
+#   candle  capsules  cashew  chewinggum  fryum  macaroni1  macaroni2
+#   pcb1  pcb2  pcb3  pcb4  pipe_fryum
+# Sweep 2-3 (pcb1-4 are visually complex; macaroni/fryum have high normal variance).
+
+seed: 42
+category: candle
+
+dataset:
+  name: visa
+  root: datasets/visa
+  image_size: [256, 256]
+  train_batch_size: 8
+  eval_batch_size: 16
+  num_workers: 2
+
+model:
+  name: patchcore
+  backbone: wide_resnet50_2
+  layers: [layer2, layer3]
+  coreset_sampling_ratio: 0.1
+  num_neighbors: 9
+
+training:
+  accelerator: auto
+  devices: 1
+
+# Maps export regardless (Stage-1 deliverable); crop.enabled toggles the VLM ARM-B only.
+# The substrate round does not run the crop arm.
+crop:
+  enabled: false
+  peak_fraction: 0.5
+  padding: 0.25
+  min_size: 64
