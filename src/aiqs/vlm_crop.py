@@ -38,7 +38,7 @@ from aiqs.eval import vlm_eval as ve
 from aiqs.eval.decision import Decision, cross_venn_abers, decide
 from aiqs.vlm.abstain import adjudicate_probability, confidence_to_p
 from aiqs.vlm.adjudicate import adjudicate
-from aiqs.vlm.backend import AnthropicVLMBackend, MockVLMBackend, VLMParseError
+from aiqs.vlm.backend import MODEL, AnthropicVLMBackend, MockVLMBackend, VLMParseError
 from aiqs.vlm.crop_fn import make_crop_fn
 from aiqs.vlm.state import VLMState
 from aiqs.vlm.substrate import SubstrateError, bucket_composition, substrate_guard
@@ -61,8 +61,16 @@ PROGRESS_EVERY = 25
 # also the raw audit trail (verdict + reasoning + tokens per call).
 # --------------------------------------------------------------------------- #
 
-def _ckpt_path(run_dir: Path, mock: bool) -> Path:
-    return run_dir / ((MOCK_PREFIX if mock else "") + CHECKPOINT)
+def _model_suffix(model: str) -> str:
+    """Non-canonical models (anything but the LOCKED claude-sonnet-4-6) get their own
+    artifact namespace, so a cheap-model rehearsal can NEVER contaminate (or be resumed
+    into) the canonical run — separate checkpoint, separate results, separate summary."""
+    return "" if model == MODEL else f"__{model}"
+
+
+def _ckpt_path(run_dir: Path, mock: bool, model: str = MODEL) -> Path:
+    return run_dir / ((MOCK_PREFIX if mock else "")
+                      + CHECKPOINT.replace(".jsonl", _model_suffix(model) + ".jsonl"))
 
 
 def load_checkpoint(path: Path) -> dict:
@@ -76,15 +84,19 @@ def load_checkpoint(path: Path) -> dict:
     return done
 
 
-def _record(arm: str, r: int, i: int, s: VLMState) -> dict:
-    return {"arm": arm, "run": r, "idx": i, "image_path": s.image_path,
+def _record(arm: str, r: int, i: int, s: VLMState, model: str) -> dict:
+    return {"arm": arm, "run": r, "idx": i, "image_path": s.image_path, "model": model,
             "vlm_verdict": s.vlm_verdict, "vlm_conf": s.vlm_conf,
             "vlm_reasoning": s.vlm_reasoning, "p_vlm": s.p_vlm,
             "final_decision": s.final_decision.value, "abstained": s.abstained,
             "tokens_in": s.tokens_in, "tokens_out": s.tokens_out}
 
 
-def _restore(rec: dict, template: VLMState, with_map: bool) -> VLMState:
+def _restore(rec: dict, template: VLMState, with_map: bool, model: str) -> VLMState:
+    if rec.get("model", model) != model:
+        raise RuntimeError(
+            f"CHECKPOINT MISMATCH: checkpoint records are from model {rec['model']!r} but "
+            f"this run requests {model!r} — refusing to mix models in one experiment.")
     if rec["image_path"] != template.image_path:
         raise RuntimeError(
             f"CHECKPOINT MISMATCH at (arm={rec['arm']}, run={rec['run']}, idx={rec['idx']}): "
@@ -167,7 +179,7 @@ def _fresh(template: VLMState, *, with_map: bool) -> VLMState:
 
 def run_two_arm(run_dir: Path, *, k: int, mock: bool, seed: int, folds: int,
                 token_cost: float, lambda_grid, repo_root: Path,
-                max_items: int | None, crop_cfg: CropConfig):
+                max_items: int | None, crop_cfg: CropConfig, model: str = MODEL):
     scores, labels, paths = _load_scores(run_dir)
     p_cross, _, _ = cross_venn_abers(scores, labels, k=folds, seed=seed)
     decisions = decide(p_cross, LOCKED_COST)
@@ -190,10 +202,10 @@ def run_two_arm(run_dir: Path, *, k: int, mock: bool, seed: int, folds: int,
         if mock:
             # SAME seed schedule for both arms (symmetric); arms differ only by the crop.
             return MockVLMBackend(seed=seed + run_idx)
-        return (AnthropicVLMBackend(crop_fn=make_crop_fn(crop_cfg)) if arm == "B"
-                else AnthropicVLMBackend())
+        return (AnthropicVLMBackend(model=model, crop_fn=make_crop_fn(crop_cfg))
+                if arm == "B" else AnthropicVLMBackend(model=model))
 
-    ckpt = _ckpt_path(run_dir, mock)
+    ckpt = _ckpt_path(run_dir, mock, model)
     done = load_checkpoint(ckpt)
     total = 2 * k * len(template)
     print(f"  [plan] {len(template)} items x 2 arms x K={k} = {total} calls; "
@@ -215,12 +227,12 @@ def run_two_arm(run_dir: Path, *, k: int, mock: bool, seed: int, folds: int,
                 for i, s in enumerate(template):
                     key = (arm, r, i)
                     if key in done:                     # already paid for — restore, skip
-                        states.append(_restore(done[key], s, with_map))
+                        states.append(_restore(done[key], s, with_map, model))
                         continue
                     state, failed = _adjudicate_loud_fallback(
                         _fresh(s, with_map=with_map), backend, LOCKED_COST)
                     parse_failures += failed
-                    f.write(json.dumps(_record(arm, r, i, state)) + "\n")
+                    f.write(json.dumps(_record(arm, r, i, state, model)) + "\n")
                     f.flush()                            # a crash now loses ZERO calls
                     states.append(state)
                     calls_new += 1
@@ -248,20 +260,23 @@ def run_two_arm(run_dir: Path, *, k: int, mock: bool, seed: int, folds: int,
 # Persistence + console
 # --------------------------------------------------------------------------- #
 
-def write_results(run_dir: Path, states_a, states_b, mock: bool) -> Path:
+def write_results(run_dir: Path, states_a, states_b, mock: bool,
+                  model: str = MODEL) -> Path:
     rows = []
     for arm, per_run in (("A", states_a), ("B", states_b)):
         for r, states in enumerate(per_run):
             for s in states:
                 rows.append({
-                    "arm": arm, "run": r, "image_path": s.image_path, "label": s.label,
+                    "arm": arm, "run": r, "model": model,
+                    "image_path": s.image_path, "label": s.label,
                     "detector_score": s.detector_score, "detector_p": s.detector_p,
                     "vlm_verdict": s.vlm_verdict, "vlm_conf": s.vlm_conf,
                     "vlm_reasoning": s.vlm_reasoning,          # audit trail for the rules
                     "final_decision": s.final_decision.value, "abstained": s.abstained,
                     "tokens_in": s.tokens_in, "tokens_out": s.tokens_out,
                     "had_crop": s.anomaly_map_path is not None})
-    path = run_dir / ((MOCK_PREFIX if mock else "") + RESULTS_CSV)
+    path = run_dir / ((MOCK_PREFIX if mock else "")
+                      + RESULTS_CSV.replace(".csv", _model_suffix(model) + ".csv"))
     pd.DataFrame(rows).to_csv(path, index=False)
     return path
 
@@ -311,6 +326,10 @@ def main() -> None:
     ap.add_argument("--run", help="results/runs/<run_id> (default: latest)")
     ap.add_argument("--results-dir", default="results")
     ap.add_argument("--mock", action="store_true", help="scripted VLM, walled off")
+    ap.add_argument("--model", default=MODEL,
+                    help=f"VLM model (default: the LOCKED {MODEL}). Any other value is a "
+                         "REHEARSAL: separate checkpoint/results namespace, never appended "
+                         "to summary.md, never headline evidence.")
     ap.add_argument("--k", type=int, default=ve.RUN_K)
     ap.add_argument("--folds", type=int, default=10)
     ap.add_argument("--seed", type=int, default=42)
@@ -325,23 +344,35 @@ def main() -> None:
     if not args.mock and not os.getenv("ANTHROPIC_API_KEY"):
         ap.error("ANTHROPIC_API_KEY not set (use --mock for the wiring smoke).")
 
+    canonical = args.model == MODEL
+    if not canonical:
+        print(f"\n  *** NON-CANONICAL MODEL: {args.model} — REHEARSAL run. The locked "
+              f"Stage-3 headline model is {MODEL}; these results get their own artifact "
+              "namespace and are NEVER written to summary.md. ***\n")
+
     try:
         res, comp, states_a, states_b = run_two_arm(
             run_dir, k=args.k, mock=args.mock, seed=args.seed, folds=args.folds,
             token_cost=args.token_cost, lambda_grid=[0.0, 0.25, 0.5, 0.75, 1.0],
-            repo_root=repo_root, max_items=args.max_items, crop_cfg=CropConfig())
+            repo_root=repo_root, max_items=args.max_items, crop_cfg=CropConfig(),
+            model=args.model)
     except SubstrateError as e:
         print(f"\n[SUBSTRATE GUARD] {e}\n")
         raise SystemExit(2)
 
-    csv_path = write_results(run_dir, states_a, states_b, args.mock)
-    body = "\n".join(summary_lines(res, comp)) + "\n"
+    csv_path = write_results(run_dir, states_a, states_b, args.mock, args.model)
+    body = f"_Model: {args.model}_\n\n" + "\n".join(summary_lines(res, comp)) + "\n"
     if args.mock:
         (run_dir / (MOCK_PREFIX + "vlm_crop_summary.md")).write_text(MOCK_BANNER + body)
         print("  [MOCK] two-arm wiring smoke — NOT evidence.")
-    else:
+    elif canonical:
         with open(run_dir / "summary.md", "a") as f:
             f.write("\n" + body)
+    else:
+        # Rehearsal models write their own summary file — summary.md stays canonical-only.
+        (run_dir / f"vlm_crop_summary{_model_suffix(args.model)}.md").write_text(
+            f"# ⚠️ REHEARSAL — {args.model}, NOT the locked headline model ({MODEL})\n\n"
+            + body)
     print_console(res, comp)
     print(f"  artifacts -> {csv_path.name} in {run_dir}\n")
 

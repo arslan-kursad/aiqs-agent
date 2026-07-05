@@ -175,8 +175,11 @@ class AnthropicVLMBackend:
         )
         # Pre-registered guard (the silent-3.5-downgrade lesson): the SERVED model must be
         # the expected one, on EVERY call. STOP LOUD, never silently continue on a substitute.
+        # An alias may legitimately resolve to its dated full id (e.g. claude-haiku-4-5 ->
+        # claude-haiku-4-5-20251001), so accept exact match OR "<requested>-<date>" — a real
+        # downgrade (a different model family/version) still fails both.
         served = getattr(msg, "model", None)
-        if served != self.model:
+        if served != self.model and not str(served or "").startswith(self.model + "-"):
             raise RuntimeError(
                 f"SERVED MODEL MISMATCH: expected {self.model!r}, API served {served!r}. "
                 "Stopping — results on a substitute model are not valid evidence.")

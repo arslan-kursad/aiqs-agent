@@ -139,6 +139,34 @@ def test_served_model_mismatch_stops(monkeypatch):
                         VLMState(image_path="x", detector_score=0.5, detector_p=0.5))
 
 
+def test_served_model_dated_full_id_accepted(monkeypatch):
+    # An alias may resolve to its dated full id (claude-haiku-4-5 ->
+    # claude-haiku-4-5-20251001): that is the SAME model, not a downgrade — no stop.
+    backend = AnthropicVLMBackend(model="claude-haiku-4-5")
+
+    class _FakeClient:
+        class messages:  # noqa: N801
+            @staticmethod
+            def create(**kwargs):
+                m = _FakeMsg("claude-haiku-4-5-20251001")
+                return m
+
+    monkeypatch.setattr(backend, "_client_lazy", lambda: _FakeClient())
+    out = backend._invoke("sys", [{"type": "text", "text": "q"}],
+                          VLMState(image_path="x", detector_score=0.5, detector_p=0.5))
+    assert out == ""                               # empty content -> empty text, no raise
+
+
+def test_rehearsal_model_gets_separate_checkpoint_namespace(synthetic_run):
+    # A haiku rehearsal must NOT resume from (or write into) the canonical checkpoint.
+    from aiqs.vlm_crop import _ckpt_path
+
+    _, run_dir = synthetic_run
+    canon = _ckpt_path(run_dir, mock=False)
+    haiku = _ckpt_path(run_dir, mock=False, model="claude-haiku-4-5")
+    assert canon != haiku and "claude-haiku-4-5" in haiku.name
+
+
 # --------------------------------------------------------------------------- #
 # End-to-end mock on a synthetic run dir (maps + manifest + images + scores)
 # --------------------------------------------------------------------------- #
