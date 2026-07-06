@@ -25,8 +25,16 @@ CROP_NOTE = (
 )
 
 
-def make_crop_fn(crop_cfg):
-    """Return ``crop_fn(state, max_edge) -> (image_block | None, crop_note)``."""
+def make_crop_fn(crop_cfg, encode_fn=None):
+    """Return ``crop_fn(state, max_edge) -> (image_block | None, crop_note)``.
+
+    ``encode_fn(image, max_edge) -> dict`` wraps the cropped PIL image into a
+    provider-shaped content block; defaults to the Anthropic image-block shape (the
+    2A/2B design). Pass a different ``encode_fn`` to plug the SAME crop instrument into a
+    non-Anthropic backend (e.g. ``OpenAICompatibleVLMBackend``'s ``image_url`` shape) —
+    the crop logic itself (``aiqs.crop.compute_crop``) never changes per provider.
+    """
+    encode = encode_fn or _encode_image_block
 
     def crop_fn(state, max_edge: int):
         import numpy as np
@@ -41,23 +49,16 @@ def make_crop_fn(crop_cfg):
         result = compute_crop(amap, image, crop_cfg)
         if result.crop is None:                 # diffuse -> full-image-only for this item
             return None, ""
-        return _encode_image_block(result.crop, max_edge), CROP_NOTE
+        return encode(result.crop, max_edge), CROP_NOTE
 
     return crop_fn
 
 
 def _encode_image_block(image, max_edge: int) -> dict:
     """Encode a PIL image as an Anthropic base64 image block (resize to ``max_edge`` short
-    side — same convention as the backend's full-image encoder)."""
-    import base64
-    import io
+    side — same shared encoder the backends use)."""
+    from aiqs.vlm.image_encode import encode_png_b64
 
-    w, h = image.size
-    scale = max_edge / min(w, h)
-    if scale < 1.0:
-        image = image.resize((max(1, int(w * scale)), max(1, int(h * scale))))
-    buf = io.BytesIO()
-    image.save(buf, format="PNG")
-    b64 = base64.standard_b64encode(buf.getvalue()).decode()
+    b64 = encode_png_b64(image, max_edge)
     return {"type": "image",
             "source": {"type": "base64", "media_type": "image/png", "data": b64}}

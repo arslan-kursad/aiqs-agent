@@ -186,6 +186,69 @@ def test_error_independence_theatre_case():
 
 
 # --------------------------------------------------------------------------- #
+# Degeneracy guard (added before the sonnet-4-6 headline run — see CLAUDE.md).
+# A rubber-stamp model can satisfy Wilson-lo>P_IND_MIN by luck; the raw-verdict
+# degeneracy check must override the label to "invalid-degenerate" regardless.
+# --------------------------------------------------------------------------- #
+
+def test_is_degenerate_thresholds():
+    assert ve.is_degenerate(["clean"] * 95 + ["defect"] * 5) is True       # exactly 95%
+    assert ve.is_degenerate(["clean"] * 94 + ["defect"] * 6) is False      # just under
+    assert ve.is_degenerate(["unsure"] * 20) is True                       # all-unsure counts too
+    assert ve.is_degenerate([]) is False
+    assert ve.is_degenerate(None) is False
+
+
+def test_error_independence_forces_invalid_degenerate_despite_otherwise_independent_shape():
+    # Same "independent" setup as above (VLM perfect, 6 detector errors) — but ALL verdicts
+    # are "clean" (a rubber stamp). The degeneracy guard must override "independent".
+    labels = np.array([0] * 8 + [1] * 8)
+    det_call = labels.copy()
+    det_call[[0, 1, 2, 8, 9, 10]] ^= 1
+    vlm_call = labels.copy()
+    raw = ["clean"] * 16
+    out = ve.error_independence(vlm_call, det_call, labels, seed=1, raw_verdicts=raw)
+    assert out.label == "invalid-degenerate"
+
+
+def test_error_independence_raw_verdicts_none_is_backward_compatible():
+    # Omitting raw_verdicts (old call shape) must behave exactly as before the guard.
+    labels = np.array([0] * 8 + [1] * 8)
+    det_call = labels.copy()
+    det_call[[0, 1, 2, 8, 9, 10]] ^= 1
+    vlm_call = labels.copy()
+    out = ve.error_independence(vlm_call, det_call, labels, seed=1)
+    assert out.label == "independent"
+
+
+def test_evaluate_all_degenerate_runs_report_no_not_yes(monkeypatch):
+    # The tie-break bugfix: if EVERY run is invalid-degenerate, dist={"independent":0,...}
+    # and max() would previously default to "independent" by insertion order (a 0-count
+    # tie), printing a nonsensical "YES: independent in 0/5 runs". Must read NO.
+    labels_bucket = np.array([0, 0, 1, 1])
+    det_call_bucket = np.array([0, 1, 1, 0])
+
+    def _state(label, verdict):
+        s = VLMState(image_path=f"{label}-{verdict}", detector_score=0.5, detector_p=0.5,
+                    label=label)
+        s.vlm_verdict, s.vlm_conf = verdict, 0.9
+        s.final_decision = Decision.PASS if verdict == "clean" else Decision.FAIL
+        s.abstained = False
+        s.p_vlm = 0.9 if verdict == "defect" else 0.1
+        return s
+
+    states_per_run = [[_state(0, "clean"), _state(0, "clean"),
+                       _state(1, "clean"), _state(1, "clean")] for _ in range(5)]
+    result = ve.evaluate(states_per_run, np.zeros(4), labels_bucket, det_call_bucket,
+                        LOCKED, cost_label="10/3/1", token_cost=0.0,
+                        lambda_grid=[0.0], seed=0)
+    assert result.rule_distribution["invalid-degenerate"] == 5
+    assert result.rule_distribution["independent"] == 0
+    assert result.rule_stability.startswith("NO: independent in 0/5 runs")
+    assert "INVALID-DEGENERATE" in result.rule_stability
+
+
+# --------------------------------------------------------------------------- #
 # adjudicate seam + K-run stability
 # --------------------------------------------------------------------------- #
 

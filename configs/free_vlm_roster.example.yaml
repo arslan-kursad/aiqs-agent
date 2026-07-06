@@ -1,0 +1,43 @@
+# Phase-2B ARM-C — example free-tier VLM roster (documentation only, NOT parsed by code).
+#
+# This file is never read by aiqs — it exists so that "swap the free-tier model" stays a
+# copy-paste of three flags, not a memory exercise three weeks later on a fresh Kaggle
+# session. Free rosters rotate monthly; treat every entry below as "verify with --smoke
+# before trusting", not a guarantee.
+#
+# Usage (aiqs-vlm-crop flags, not this file):
+#   export <api_key_env>=...        # e.g. in Kaggle: os.environ[...] = UserSecretsClient()...
+#   uv run aiqs-vlm-crop --run <id> --provider openai_compatible \
+#       --model <model> --base-url <base_url> --api-key-env <api_key_env> \
+#       --rpm-limit <rpm_limit> --smoke      # ALWAYS smoke first on a new roster entry
+#
+# ---------------------------------------------------------------------------------------
+
+# Google AI Studio — OpenAI-compatibility layer.
+# Docs: https://ai.google.dev/gemini-api/docs/openai
+- name: google-ai-studio-gemini-flash-lite
+  model: gemini-3.1-flash-lite-preview        # VERIFY the current free/preview slug
+  base_url: https://generativelanguage.googleapis.com/v1beta/openai/
+  api_key_env: GOOGLE_AI_STUDIO_API_KEY
+  rpm_limit: 15                                # free tier — verify current limits
+  daily_quota: 500                             # informational; not enforced by aiqs
+  notes: >
+    Free tier may use submitted content to improve Google's products (see Google AI
+    Studio's terms) — acceptable here because inputs are PUBLIC anomaly-detection
+    benchmark images (VisA/MVTec), never proprietary data. Verify served-model string
+    with --smoke; Google's OpenAI-compat layer has been observed to echo back the
+    resolved (dated) model id, not the bare alias.
+
+# OpenRouter — aggregates many providers' `:free` routes behind one OpenAI-compatible API.
+# Docs: https://openrouter.ai/docs
+- name: openrouter-free-vision-slug
+  model: <provider>/<model>:free                # e.g. "qwen/qwen2.5-vl-32b-instruct:free"
+  base_url: https://openrouter.ai/api/v1
+  api_key_env: OPENROUTER_API_KEY
+  rpm_limit: 20                                  # varies by underlying provider — verify
+  daily_quota: null                              # varies by :free route — verify
+  notes: >
+    ":free" routes rotate model availability monthly and may queue/rate-limit harder than
+    paid routes. OpenRouter's response `model` field reflects the ACTUAL serving model,
+    which can differ subtly from the requested slug on some routes — --smoke before a
+    real run, every time this entry changes.

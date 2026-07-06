@@ -14,10 +14,12 @@ CATEGORY ?= screw
 RUN      ?=                 # Phase-1 run id (empty => latest run)
 UV       := uv run
 
-.PHONY: help install data train eval baseline smoke smoke-patchcore decide sim test clean
+.PHONY: help install data train eval baseline smoke smoke-patchcore decide sim vlm \
+	vlm-crop model-tier-report test clean
 
 help:
-	@echo "Targets: install | data | train | eval | baseline | smoke | decide | test | clean"
+	@echo "Targets: install | data | train | eval | baseline | smoke | decide | vlm |"
+	@echo "         vlm-crop | model-tier-report | test | clean"
 	@echo "Vars:    CONFIG=$(CONFIG)  CATEGORY=$(CATEGORY)  RUN=$(RUN)"
 
 install:
@@ -71,8 +73,17 @@ vlm:
 	$(UV) aiqs-vlm $(if $(RUN),--run $(RUN),) $(if $(MOCK),--mock,)
 
 # Phase-2B Stage-3 two-arm full-vs-crop experiment (needs the run's anomaly maps).
+# The locked headline is provider=anthropic model=claude-sonnet-4-6 (the defaults) — for
+# ARM-C (a free-tier model-tier rehearsal) pass the provider/model/base-url/api-key-env
+# flags directly to aiqs-vlm-crop (see configs/free_vlm_roster.example.yaml).
 vlm-crop:
 	$(UV) aiqs-vlm-crop $(if $(RUN),--run $(RUN),) $(if $(MOCK),--mock,)
+
+# Phase-2B cost-scaling comparison across every vlm_crop_results*.csv in a run dir
+# (Haiku rehearsal, the sonnet-4-6 headline, any ARM-C free-tier run, ...). Walled off:
+# writes model_tier_report.md, never appended to summary.md.
+model-tier-report:
+	$(UV) aiqs-model-tier-report $(if $(RUN),--run $(RUN),)
 
 # Unit tests for the decision policy / calibration / guard (dev group).
 test:

@@ -129,19 +129,9 @@ class AnthropicVLMBackend:
         return self._client
 
     def _encode_image(self, path: str) -> dict:
-        import base64
-        import io
+        from aiqs.vlm.image_encode import load_and_encode
 
-        from PIL import Image
-
-        img = Image.open(path).convert("RGB")
-        w, h = img.size
-        scale = self.max_edge / min(w, h)
-        if scale < 1.0:
-            img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))))
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        b64 = base64.standard_b64encode(buf.getvalue()).decode()
+        b64 = load_and_encode(path, self.max_edge)
         return {"type": "image", "source": {"type": "base64",
                                             "media_type": "image/png", "data": b64}}
 
@@ -175,14 +165,9 @@ class AnthropicVLMBackend:
         )
         # Pre-registered guard (the silent-3.5-downgrade lesson): the SERVED model must be
         # the expected one, on EVERY call. STOP LOUD, never silently continue on a substitute.
-        # An alias may legitimately resolve to its dated full id (e.g. claude-haiku-4-5 ->
-        # claude-haiku-4-5-20251001), so accept exact match OR "<requested>-<date>" — a real
-        # downgrade (a different model family/version) still fails both.
-        served = getattr(msg, "model", None)
-        if served != self.model and not str(served or "").startswith(self.model + "-"):
-            raise RuntimeError(
-                f"SERVED MODEL MISMATCH: expected {self.model!r}, API served {served!r}. "
-                "Stopping — results on a substitute model are not valid evidence.")
+        from aiqs.vlm.model_guard import assert_model_matches
+
+        assert_model_matches(self.model, getattr(msg, "model", None))
         u = getattr(msg, "usage", None)
         if u is not None:  # Stage-3 token-cost line (incl. the crop's 2nd-image increment)
             state.tokens_in = getattr(u, "input_tokens", None)

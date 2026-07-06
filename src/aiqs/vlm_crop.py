@@ -61,16 +61,27 @@ PROGRESS_EVERY = 25
 # also the raw audit trail (verdict + reasoning + tokens per call).
 # --------------------------------------------------------------------------- #
 
-def _model_suffix(model: str) -> str:
-    """Non-canonical models (anything but the LOCKED claude-sonnet-4-6) get their own
-    artifact namespace, so a cheap-model rehearsal can NEVER contaminate (or be resumed
-    into) the canonical run — separate checkpoint, separate results, separate summary."""
-    return "" if model == MODEL else f"__{model}"
+def _model_suffix(model: str, provider: str = "anthropic") -> str:
+    """Non-canonical models (anything but the LOCKED claude-sonnet-4-6 on the anthropic
+    provider) get their own artifact namespace, so a cheap-model rehearsal OR a free-tier
+    ARM-C run can NEVER contaminate (or be resumed into) the canonical run — separate
+    checkpoint, separate results, separate summary.
+
+    Non-anthropic providers are namespaced by BOTH provider and model (``__provider__model``)
+    since two different free-tier endpoints could plausibly reuse a similar model string —
+    the canonical anthropic/claude-sonnet-4-6 suffix behaviour is UNCHANGED (empty string),
+    so every existing checkpoint/results file keeps resolving exactly as before.
+    """
+    if model == MODEL and provider == "anthropic":
+        return ""
+    tag = model if provider == "anthropic" else f"{provider}__{model}"
+    return f"__{tag}"
 
 
-def _ckpt_path(run_dir: Path, mock: bool, model: str = MODEL) -> Path:
+def _ckpt_path(run_dir: Path, mock: bool, model: str = MODEL,
+              provider: str = "anthropic") -> Path:
     return run_dir / ((MOCK_PREFIX if mock else "")
-                      + CHECKPOINT.replace(".jsonl", _model_suffix(model) + ".jsonl"))
+                      + CHECKPOINT.replace(".jsonl", _model_suffix(model, provider) + ".jsonl"))
 
 
 def load_checkpoint(path: Path) -> dict:
@@ -84,19 +95,23 @@ def load_checkpoint(path: Path) -> dict:
     return done
 
 
-def _record(arm: str, r: int, i: int, s: VLMState, model: str) -> dict:
+def _record(arm: str, r: int, i: int, s: VLMState, model: str, provider: str) -> dict:
     return {"arm": arm, "run": r, "idx": i, "image_path": s.image_path, "model": model,
+            "provider": provider, "timestamp": time.time(),
             "vlm_verdict": s.vlm_verdict, "vlm_conf": s.vlm_conf,
             "vlm_reasoning": s.vlm_reasoning, "p_vlm": s.p_vlm,
             "final_decision": s.final_decision.value, "abstained": s.abstained,
             "tokens_in": s.tokens_in, "tokens_out": s.tokens_out}
 
 
-def _restore(rec: dict, template: VLMState, with_map: bool, model: str) -> VLMState:
-    if rec.get("model", model) != model:
+def _restore(rec: dict, template: VLMState, with_map: bool, model: str,
+            provider: str = "anthropic") -> VLMState:
+    if rec.get("model", model) != model or rec.get("provider", "anthropic") != provider:
         raise RuntimeError(
-            f"CHECKPOINT MISMATCH: checkpoint records are from model {rec['model']!r} but "
-            f"this run requests {model!r} — refusing to mix models in one experiment.")
+            f"CHECKPOINT MISMATCH: checkpoint records are from "
+            f"(provider={rec.get('provider', 'anthropic')!r}, model={rec.get('model')!r}) "
+            f"but this run requests (provider={provider!r}, model={model!r}) — refusing to "
+            "mix models/providers in one experiment.")
     if rec["image_path"] != template.image_path:
         raise RuntimeError(
             f"CHECKPOINT MISMATCH at (arm={rec['arm']}, run={rec['run']}, idx={rec['idx']}): "
@@ -177,9 +192,72 @@ def _fresh(template: VLMState, *, with_map: bool) -> VLMState:
         anomaly_map_path=template.anomaly_map_path if with_map else None)
 
 
+def crop_fn_for(provider: str, crop_cfg: CropConfig):
+    """The SAME crop instrument (``aiqs.crop.compute_crop``) for every provider — only the
+    content-block WRAPPING differs (Anthropic vs OpenAI-compatible image-block shape)."""
+    if provider == "openai_compatible":
+        from aiqs.vlm.backend_openai_compatible import OpenAICompatibleVLMBackend
+
+        return make_crop_fn(crop_cfg, encode_fn=OpenAICompatibleVLMBackend._encode_image_block)
+    return make_crop_fn(crop_cfg)
+
+
+def build_backend(provider: str, model: str, *, crop_fn=None, base_url: str | None = None,
+                  api_key_env: str | None = None, rpm_limit: float | None = None):
+    """Construct the real (non-mock) backend for a provider. A single dispatch point so
+    ``run_two_arm`` and ``run_smoke`` never diverge on how a backend is built."""
+    if provider == "anthropic":
+        return AnthropicVLMBackend(model=model, crop_fn=crop_fn)
+    if provider == "openai_compatible":
+        from aiqs.vlm.backend_openai_compatible import OpenAICompatibleVLMBackend
+
+        if not base_url or not api_key_env:
+            raise ValueError("provider='openai_compatible' requires --base-url and "
+                             "--api-key-env.")
+        return OpenAICompatibleVLMBackend(model=model, base_url=base_url,
+                                          api_key_env=api_key_env, rpm_limit=rpm_limit,
+                                          crop_fn=crop_fn)
+    raise ValueError(f"Unsupported provider {provider!r}. Use 'anthropic' or "
+                     "'openai_compatible'.")
+
+
+def run_smoke(run_dir: Path, *, model: str, provider: str, base_url: str | None,
+             api_key_env: str | None, rpm_limit: float | None, repo_root: Path,
+             crop_cfg: CropConfig, seed: int = 42, folds: int = 10) -> None:
+    """ONE real call per arm (2 total) to shake out a new provider/endpoint BEFORE a real
+    paid run: confirms auth, vision-content acceptance, the served-model string, and that
+    usage fields populate — never assumed. Writes to a dedicated *_smoke.jsonl file, kept
+    OUT of the real checkpoint/resume path so it can never be mistaken for a paid call."""
+    scores, labels, paths = _load_scores(run_dir)
+    p_cross, _, _ = cross_venn_abers(scores, labels, k=folds, seed=seed)
+    decisions = decide(p_cross, LOCKED_COST)
+    comp = bucket_composition(labels, decisions)
+    esc_mask = comp["escalate_mask"]
+    template = build_bucket_states(scores, labels, paths, p_cross, esc_mask, repo_root)[:1]
+    if not template:
+        raise SubstrateError("Bucket is empty — cannot smoke-test.")
+    attach_maps_and_diffuse(template, load_map_index(run_dir), crop_cfg)
+
+    print(f"  [smoke] provider={provider} model={model} — 1 real call per arm ...")
+    for arm, with_map in (("A", False), ("B", True)):
+        cfn = crop_fn_for(provider, crop_cfg) if with_map else None
+        backend = build_backend(provider, model, crop_fn=cfn, base_url=base_url,
+                                api_key_env=api_key_env, rpm_limit=rpm_limit)
+        state = _fresh(template[0], with_map=with_map)
+        verdict = backend(state)
+        print(f"  [smoke][ARM-{arm}] served ok | verdict={verdict.verdict} "
+              f"conf={verdict.confidence:.2f} | tokens_in={state.tokens_in} "
+              f"tokens_out={state.tokens_out} (None => usage field not populated — check "
+              "the provider's response shape before the real run)")
+    print("  [smoke] PASS — auth + served-model + content acceptance confirmed for both "
+          "arms. Re-run without --smoke for the real round.")
+
+
 def run_two_arm(run_dir: Path, *, k: int, mock: bool, seed: int, folds: int,
                 token_cost: float, lambda_grid, repo_root: Path,
-                max_items: int | None, crop_cfg: CropConfig, model: str = MODEL):
+                max_items: int | None, crop_cfg: CropConfig, model: str = MODEL,
+                provider: str = "anthropic", base_url: str | None = None,
+                api_key_env: str | None = None, rpm_limit: float | None = None):
     scores, labels, paths = _load_scores(run_dir)
     p_cross, _, _ = cross_venn_abers(scores, labels, k=folds, seed=seed)
     decisions = decide(p_cross, LOCKED_COST)
@@ -202,10 +280,11 @@ def run_two_arm(run_dir: Path, *, k: int, mock: bool, seed: int, folds: int,
         if mock:
             # SAME seed schedule for both arms (symmetric); arms differ only by the crop.
             return MockVLMBackend(seed=seed + run_idx)
-        return (AnthropicVLMBackend(model=model, crop_fn=make_crop_fn(crop_cfg))
-                if arm == "B" else AnthropicVLMBackend(model=model))
+        cfn = crop_fn_for(provider, crop_cfg) if arm == "B" else None
+        return build_backend(provider, model, crop_fn=cfn, base_url=base_url,
+                            api_key_env=api_key_env, rpm_limit=rpm_limit)
 
-    ckpt = _ckpt_path(run_dir, mock, model)
+    ckpt = _ckpt_path(run_dir, mock, model, provider)
     done = load_checkpoint(ckpt)
     total = 2 * k * len(template)
     print(f"  [plan] {len(template)} items x 2 arms x K={k} = {total} calls; "
@@ -227,12 +306,12 @@ def run_two_arm(run_dir: Path, *, k: int, mock: bool, seed: int, folds: int,
                 for i, s in enumerate(template):
                     key = (arm, r, i)
                     if key in done:                     # already paid for — restore, skip
-                        states.append(_restore(done[key], s, with_map, model))
+                        states.append(_restore(done[key], s, with_map, model, provider))
                         continue
                     state, failed = _adjudicate_loud_fallback(
                         _fresh(s, with_map=with_map), backend, LOCKED_COST)
                     parse_failures += failed
-                    f.write(json.dumps(_record(arm, r, i, state, model)) + "\n")
+                    f.write(json.dumps(_record(arm, r, i, state, model, provider)) + "\n")
                     f.flush()                            # a crash now loses ZERO calls
                     states.append(state)
                     calls_new += 1
@@ -261,22 +340,22 @@ def run_two_arm(run_dir: Path, *, k: int, mock: bool, seed: int, folds: int,
 # --------------------------------------------------------------------------- #
 
 def write_results(run_dir: Path, states_a, states_b, mock: bool,
-                  model: str = MODEL) -> Path:
+                  model: str = MODEL, provider: str = "anthropic") -> Path:
     rows = []
     for arm, per_run in (("A", states_a), ("B", states_b)):
         for r, states in enumerate(per_run):
             for s in states:
                 rows.append({
-                    "arm": arm, "run": r, "model": model,
+                    "arm": arm, "run": r, "model": model, "provider": provider,
                     "image_path": s.image_path, "label": s.label,
                     "detector_score": s.detector_score, "detector_p": s.detector_p,
-                    "vlm_verdict": s.vlm_verdict, "vlm_conf": s.vlm_conf,
+                    "vlm_verdict": s.vlm_verdict, "vlm_conf": s.vlm_conf, "p_vlm": s.p_vlm,
                     "vlm_reasoning": s.vlm_reasoning,          # audit trail for the rules
                     "final_decision": s.final_decision.value, "abstained": s.abstained,
                     "tokens_in": s.tokens_in, "tokens_out": s.tokens_out,
                     "had_crop": s.anomaly_map_path is not None})
     path = run_dir / ((MOCK_PREFIX if mock else "")
-                      + RESULTS_CSV.replace(".csv", _model_suffix(model) + ".csv"))
+                      + RESULTS_CSV.replace(".csv", _model_suffix(model, provider) + ".csv"))
     pd.DataFrame(rows).to_csv(path, index=False)
     return path
 
@@ -327,9 +406,27 @@ def main() -> None:
     ap.add_argument("--results-dir", default="results")
     ap.add_argument("--mock", action="store_true", help="scripted VLM, walled off")
     ap.add_argument("--model", default=MODEL,
-                    help=f"VLM model (default: the LOCKED {MODEL}). Any other value is a "
-                         "REHEARSAL: separate checkpoint/results namespace, never appended "
-                         "to summary.md, never headline evidence.")
+                    help=f"VLM model (default: the LOCKED {MODEL}). Any other value/provider "
+                         "is a REHEARSAL: separate checkpoint/results namespace, never "
+                         "appended to summary.md, never headline evidence.")
+    ap.add_argument("--provider", default="anthropic",
+                    choices=["anthropic", "openai_compatible"],
+                    help="'anthropic' (default, the locked headline path) or "
+                         "'openai_compatible' — ARM-C / the model-tier lever. Swapping a "
+                         "free-tier roster entry is a --base-url/--model/--api-key-env "
+                         "change, never a code change.")
+    ap.add_argument("--base-url", default=None,
+                    help="required for --provider openai_compatible (e.g. Google AI "
+                         "Studio's or OpenRouter's OpenAI-compatible endpoint).")
+    ap.add_argument("--api-key-env", default=None,
+                    help="NAME of the env var holding the API key (never the key itself) "
+                         "— required for --provider openai_compatible.")
+    ap.add_argument("--rpm-limit", type=float, default=None,
+                    help="proactive requests-per-minute ceiling (free tiers rate-limit "
+                         "hard, e.g. 15 RPM) — paced BEFORE a 429, not just retried after.")
+    ap.add_argument("--smoke", action="store_true",
+                    help="ONE real call per arm to shake out a new provider/endpoint "
+                         "before spending the real budget; writes no checkpoint.")
     ap.add_argument("--k", type=int, default=ve.RUN_K)
     ap.add_argument("--folds", type=int, default=10)
     ap.add_argument("--seed", type=int, default=42)
@@ -341,38 +438,59 @@ def main() -> None:
     repo_root = results_dir.resolve().parent if results_dir.name == "results" else Path.cwd()
     run_dir = _find_run_dir(results_dir, args.run)
 
-    if not args.mock and not os.getenv("ANTHROPIC_API_KEY"):
+    if args.provider == "openai_compatible":
+        if not args.base_url or not args.api_key_env:
+            ap.error("--provider openai_compatible requires --base-url and --api-key-env.")
+        if not args.mock and not os.getenv(args.api_key_env):
+            ap.error(f"Env var {args.api_key_env!r} is not set (use --mock for a wiring "
+                     "smoke, or export the key first).")
+    elif not args.mock and not os.getenv("ANTHROPIC_API_KEY"):
         ap.error("ANTHROPIC_API_KEY not set (use --mock for the wiring smoke).")
 
-    canonical = args.model == MODEL
+    if args.smoke:
+        if args.mock:
+            ap.error("--smoke makes REAL calls; it is meaningless with --mock.")
+        run_smoke(run_dir, model=args.model, provider=args.provider, base_url=args.base_url,
+                  api_key_env=args.api_key_env, rpm_limit=args.rpm_limit,
+                  repo_root=repo_root, crop_cfg=CropConfig(), seed=args.seed,
+                  folds=args.folds)
+        return
+
+    canonical = args.model == MODEL and args.provider == "anthropic"
     if not canonical:
-        print(f"\n  *** NON-CANONICAL MODEL: {args.model} — REHEARSAL run. The locked "
-              f"Stage-3 headline model is {MODEL}; these results get their own artifact "
-              "namespace and are NEVER written to summary.md. ***\n")
+        print(f"\n  *** NON-CANONICAL RUN: provider={args.provider} model={args.model} — "
+              f"REHEARSAL / ARM-C. The locked Stage-3 headline is provider=anthropic "
+              f"model={MODEL}; these results get their own artifact namespace and are "
+              "NEVER written to summary.md. ***\n")
 
     try:
         res, comp, states_a, states_b = run_two_arm(
             run_dir, k=args.k, mock=args.mock, seed=args.seed, folds=args.folds,
             token_cost=args.token_cost, lambda_grid=[0.0, 0.25, 0.5, 0.75, 1.0],
             repo_root=repo_root, max_items=args.max_items, crop_cfg=CropConfig(),
-            model=args.model)
+            model=args.model, provider=args.provider, base_url=args.base_url,
+            api_key_env=args.api_key_env, rpm_limit=args.rpm_limit)
     except SubstrateError as e:
         print(f"\n[SUBSTRATE GUARD] {e}\n")
         raise SystemExit(2)
 
-    csv_path = write_results(run_dir, states_a, states_b, args.mock, args.model)
-    body = f"_Model: {args.model}_\n\n" + "\n".join(summary_lines(res, comp)) + "\n"
+    csv_path = write_results(run_dir, states_a, states_b, args.mock, args.model, args.provider)
+    body = (f"_Model: {args.model} (provider: {args.provider})_\n\n"
+           + "\n".join(summary_lines(res, comp)) + "\n")
+    suffix = _model_suffix(args.model, args.provider)
     if args.mock:
-        (run_dir / (MOCK_PREFIX + "vlm_crop_summary.md")).write_text(MOCK_BANNER + body)
+        (run_dir / (MOCK_PREFIX + f"vlm_crop_summary{suffix}.md")).write_text(
+            MOCK_BANNER + body)
         print("  [MOCK] two-arm wiring smoke — NOT evidence.")
     elif canonical:
         with open(run_dir / "summary.md", "a") as f:
             f.write("\n" + body)
     else:
-        # Rehearsal models write their own summary file — summary.md stays canonical-only.
-        (run_dir / f"vlm_crop_summary{_model_suffix(args.model)}.md").write_text(
-            f"# ⚠️ REHEARSAL — {args.model}, NOT the locked headline model ({MODEL})\n\n"
-            + body)
+        # Rehearsal/ARM-C runs write their own summary file — summary.md stays
+        # canonical-only (the locked anthropic/claude-sonnet-4-6 headline).
+        (run_dir / f"vlm_crop_summary{suffix}.md").write_text(
+            f"# ⚠️ NON-CANONICAL — provider={args.provider} model={args.model}, NOT the "
+            f"locked headline (provider=anthropic model={MODEL})\n\n" + body)
     print_console(res, comp)
     print(f"  artifacts -> {csv_path.name} in {run_dir}\n")
 

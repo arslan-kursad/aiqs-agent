@@ -40,6 +40,11 @@ dependencies = [
     "anthropic>=0.40",
     "langfuse>=3,<5",
     "pydantic>=2,<3",
+    # Phase 2B ARM-C — provider-agnostic model-tier lever (backend_openai_compatible.py).
+    # Any OpenAI-Chat-Completions-compatible endpoint (Google AI Studio, OpenRouter, ...);
+    # base_url/model/api_key_env are all caller-supplied, so a free-tier roster swap is a
+    # config change, never a code change.
+    "openai>=1.0,<2",
 ]
 
 [project.scripts]
@@ -50,6 +55,7 @@ aiqs-decide = "aiqs.decide:main"
 aiqs-sim-decision = "aiqs.simulate_decision:main"
 aiqs-vlm = "aiqs.vlm_decide:main"
 aiqs-vlm-crop = "aiqs.vlm_crop:main"
+aiqs-model-tier-report = "aiqs.model_tier_report:main"
 
 # Dev-only tooling. pytest is a test dependency (not shipped/imported by the core);
 # kept out of [project.dependencies] so it never enters the runtime resolve. Pure

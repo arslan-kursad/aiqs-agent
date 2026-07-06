@@ -168,6 +168,136 @@ def test_rehearsal_model_gets_separate_checkpoint_namespace(synthetic_run):
 
 
 # --------------------------------------------------------------------------- #
+# ARM-C provider plumbing: dispatch, namespacing, checkpoint provider-awareness
+# --------------------------------------------------------------------------- #
+
+def test_model_suffix_backward_compatible_for_anthropic_default():
+    from aiqs.vlm_crop import _model_suffix
+    from aiqs.vlm.backend import MODEL
+
+    assert _model_suffix(MODEL) == ""                       # unchanged: canonical
+    assert _model_suffix(MODEL, "anthropic") == ""          # explicit provider, same
+    assert _model_suffix("claude-haiku-4-5") == "__claude-haiku-4-5"  # unchanged rehearsal
+
+
+def test_model_suffix_namespaces_non_anthropic_by_provider_and_model():
+    from aiqs.vlm_crop import _model_suffix
+
+    s = _model_suffix("gemini-3.1-flash-lite-preview", "openai_compatible")
+    assert s == "__openai_compatible__gemini-3.1-flash-lite-preview"
+
+
+def test_ckpt_path_and_write_results_are_provider_aware(synthetic_run):
+    from aiqs.vlm_crop import _ckpt_path, write_results
+
+    _, run_dir = synthetic_run
+    anthropic_path = _ckpt_path(run_dir, mock=False, model="claude-haiku-4-5",
+                                provider="anthropic")
+    armc_path = _ckpt_path(run_dir, mock=False, model="claude-haiku-4-5",
+                           provider="openai_compatible")
+    assert anthropic_path != armc_path    # same model string, different provider -> no clash
+
+    csv_path = write_results(run_dir, [], [], mock=True, model="gemini-x",
+                             provider="openai_compatible")
+    assert "openai_compatible__gemini-x" in csv_path.name
+
+
+def test_build_backend_dispatch_and_validation():
+    from aiqs.vlm.backend import AnthropicVLMBackend
+    from aiqs.vlm.backend_openai_compatible import OpenAICompatibleVLMBackend
+    from aiqs.vlm_crop import build_backend
+
+    assert isinstance(build_backend("anthropic", "claude-sonnet-4-6"), AnthropicVLMBackend)
+    oc = build_backend("openai_compatible", "gemini-x", base_url="https://x",
+                       api_key_env="K")
+    assert isinstance(oc, OpenAICompatibleVLMBackend)
+    with pytest.raises(ValueError, match="requires --base-url"):
+        build_backend("openai_compatible", "gemini-x")       # missing base_url/api_key_env
+    with pytest.raises(ValueError, match="Unsupported provider"):
+        build_backend("not-a-provider", "x")
+
+
+def test_crop_fn_for_wraps_openai_shape_vs_anthropic_shape(synthetic_run):
+    from aiqs.vlm_crop import crop_fn_for
+    from aiqs.config import CropConfig
+    from aiqs.vlm.state import VLMState
+
+    _, run_dir = synthetic_run
+    map_path = next((run_dir / "anomaly_maps").glob("*.npy"))
+    img_path = next((run_dir.parent.parent / "datasets").rglob("*.png"))
+    state = VLMState(image_path=str(img_path), detector_score=0.5, detector_p=0.5,
+                     anomaly_map_path=str(map_path))
+
+    anthropic_block, _ = crop_fn_for("anthropic", CropConfig())(state, 512)
+    openai_block, _ = crop_fn_for("openai_compatible", CropConfig())(state, 512)
+    assert anthropic_block["type"] == "image"                  # Anthropic shape
+    assert openai_block["type"] == "image_url"                 # OpenAI-compatible shape
+
+
+def test_checkpoint_record_has_timestamp_and_restore_tolerates_missing_one(synthetic_run):
+    import json
+
+    from aiqs.vlm_crop import _record, _restore
+    from aiqs.vlm.state import VLMState
+
+    s = VLMState(image_path="p.png", detector_score=0.5, detector_p=0.5, label=0)
+    s.vlm_verdict, s.vlm_conf, s.p_vlm = "clean", 0.9, 0.1
+    from aiqs.eval.decision import Decision
+    s.final_decision, s.abstained = Decision.PASS, False
+
+    rec = _record("A", 0, 0, s, "claude-sonnet-4-6", "anthropic")
+    assert "timestamp" in rec and isinstance(rec["timestamp"], float)
+
+    # Old-format record (no timestamp key) must still restore without crashing.
+    old_rec = json.loads(json.dumps(rec))
+    del old_rec["timestamp"]
+    template = VLMState(image_path="p.png", detector_score=0.5, detector_p=0.5, label=0)
+    restored = _restore(old_rec, template, with_map=False, model="claude-sonnet-4-6",
+                        provider="anthropic")
+    assert restored.vlm_verdict == "clean"
+
+
+def test_restore_refuses_cross_provider_mismatch(synthetic_run):
+    from aiqs.vlm_crop import _record, _restore
+    from aiqs.vlm.state import VLMState
+    from aiqs.eval.decision import Decision
+
+    s = VLMState(image_path="p.png", detector_score=0.5, detector_p=0.5, label=0)
+    s.vlm_verdict, s.vlm_conf, s.p_vlm = "clean", 0.9, 0.1
+    s.final_decision, s.abstained = Decision.PASS, False
+    rec = _record("A", 0, 0, s, "gemini-x", "openai_compatible")
+
+    template = VLMState(image_path="p.png", detector_score=0.5, detector_p=0.5, label=0)
+    with pytest.raises(RuntimeError, match="CHECKPOINT MISMATCH"):
+        _restore(rec, template, with_map=False, model="gemini-x", provider="anthropic")
+
+
+def test_run_smoke_makes_no_checkpoint_file(synthetic_run, monkeypatch):
+    """--smoke uses a fresh backend per arm and writes NOTHING to the real checkpoint —
+    it must be impossible for a smoke call to be mistaken for (or resumed as) a paid one."""
+    from aiqs.config import CropConfig
+    from aiqs.vlm.backend import VLMVerdict
+    from aiqs.vlm_crop import _ckpt_path, run_smoke
+
+    repo_root, run_dir = synthetic_run
+
+    class _FakeBackend:
+        def __call__(self, state):
+            state.tokens_in, state.tokens_out = 100, 20
+            return VLMVerdict(verdict="clean", confidence=0.9, reasoning="r")
+
+    import aiqs.vlm_crop as vc
+
+    monkeypatch.setattr(vc, "build_backend", lambda *a, **kw: _FakeBackend())
+    run_smoke(run_dir, model="gemini-x", provider="openai_compatible",
+             base_url="https://x", api_key_env="K", rpm_limit=None,
+             repo_root=repo_root, crop_cfg=CropConfig())
+
+    ckpt = _ckpt_path(run_dir, mock=False, model="gemini-x", provider="openai_compatible")
+    assert not ckpt.exists()
+
+
+# --------------------------------------------------------------------------- #
 # End-to-end mock on a synthetic run dir (maps + manifest + images + scores)
 # --------------------------------------------------------------------------- #
 

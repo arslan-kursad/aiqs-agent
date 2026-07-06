@@ -41,6 +41,13 @@ KAPPA_MAX = 0.20    # corroborating only: error-vector kappa below this
 RUN_K = 5           # default repeats for nondeterminism / rule-stability
 # Phase-1 native-74 break-even review cost on the PatchCore run (see CLAUDE.md).
 PHASE1_BREAKEVEN_NATIVE = 0.868
+# Degeneracy guard (added 2026-07-06, BEFORE the sonnet-4-6 headline run — see CLAUDE.md):
+# a rubber-stamp model (one verdict on >= this fraction of a run's calls) can satisfy the
+# Wilson-lo>P_IND_MIN test by sheer luck of being "right" on whichever side the detector
+# over-rejects, producing a SPURIOUS "independent" claim. Any run at/above this fraction is
+# forced to "invalid-degenerate" regardless of p_ind/kappa — the independence claim is not
+# meaningful there. Threshold frozen pre-registration-style before the headline run exists.
+DEGENERATE_VERDICT_FRAC = 0.95
 
 
 # --------------------------------------------------------------------------- #
@@ -128,7 +135,7 @@ class RuleOutcome:
     kappa: float
     kappa_lo: float
     kappa_hi: float
-    label: str               # "independent" | "redundant" | "theatre"
+    label: str               # "independent" | "redundant" | "theatre" | "invalid-degenerate"
 
     @property
     def is_independent(self) -> bool:
@@ -145,13 +152,33 @@ def _rule_label(p_ind_lo: float, kappa: float) -> str:
     return "theatre"         # no independent productive signal
 
 
+def is_degenerate(raw_verdicts, threshold: float = DEGENERATE_VERDICT_FRAC) -> bool:
+    """True if one verdict value covers >= ``threshold`` of the run (a rubber stamp).
+
+    Operates on the RAW 3-way verdict ("defect"/"clean"/"unsure"), not the binary
+    detector-comparison call — an all-"unsure" run is degenerate too, even though
+    ``vlm_call_label`` would arbitrarily lean each item and hide that in the binary vector.
+    """
+    if not raw_verdicts:
+        return False
+    n = len(raw_verdicts)
+    top = max(raw_verdicts.count(v) for v in set(raw_verdicts))
+    return (top / n) >= threshold
+
+
 def error_independence(vlm_call: np.ndarray, det_call: np.ndarray, labels: np.ndarray,
-                       *, seed: int = 0) -> RuleOutcome:
+                       *, seed: int = 0, raw_verdicts=None) -> RuleOutcome:
     """Compute the pre-registered rule inputs on ONE run's bucket.
 
     vlm_err/det_err are 1 where each is wrong vs ground truth. The load-bearing quantity
     is P(VLM correct | detector wrong) with a Wilson lower bound; kappa(err vectors) is
     secondary, with a bootstrap CI.
+
+    ``raw_verdicts`` (optional, the raw 3-way verdict per item) feeds the DEGENERACY
+    guard: a rubber-stamp run (>= DEGENERATE_VERDICT_FRAC one verdict) is forced to
+    "invalid-degenerate" regardless of the p_ind/kappa numbers — see the constant's
+    docstring. Passing ``None`` (the pre-guard call shape) skips the check, so this stays
+    backward compatible with any caller that has not been updated to pass verdicts.
     """
     labels = np.asarray(labels, dtype=int)
     vlm_err = (vlm_call != labels).astype(int)
@@ -166,7 +193,8 @@ def error_independence(vlm_call: np.ndarray, det_call: np.ndarray, labels: np.nd
     kappa = cohens_kappa(vlm_err, det_err)
     k_lo, k_hi = bootstrap_ci(cohens_kappa, vlm_err, det_err, seed=seed)
 
-    return RuleOutcome(point, lo, hi, n_dw, kappa, k_lo, k_hi, _rule_label(lo, kappa))
+    label = "invalid-degenerate" if is_degenerate(raw_verdicts) else _rule_label(lo, kappa)
+    return RuleOutcome(point, lo, hi, n_dw, kappa, k_lo, k_hi, label)
 
 
 def bidirectional_value(states) -> dict:
@@ -238,7 +266,8 @@ class VLMEval:
     confusion_modal: dict
     # error-independence rule across K runs
     rule_outcomes: list[RuleOutcome]
-    rule_distribution: dict          # {"independent": k, "redundant": k, "theatre": k}
+    rule_distribution: dict          # {"independent": k, "redundant": k, "theatre": k,
+                                      #  "invalid-degenerate": k}
     rule_modal: str
     rule_stability: str              # e.g. "YES in 5/5 runs"
     # bidirectional value (mean over runs)
@@ -275,13 +304,23 @@ def evaluate(states_per_run: list[list], scores: np.ndarray, labels_bucket: np.n
     for r, states in enumerate(states_per_run):
         vlm_call = np.array([vlm_call_label(s.vlm_verdict, s.p_vlm) for s in states],
                             dtype=int)
+        raw_verdicts = [s.vlm_verdict for s in states]
         rule_outcomes.append(
-            error_independence(vlm_call, det_call_bucket, labels_bucket, seed=seed + r))
+            error_independence(vlm_call, det_call_bucket, labels_bucket, seed=seed + r,
+                               raw_verdicts=raw_verdicts))
     dist = {lab: sum(o.label == lab for o in rule_outcomes)
-            for lab in ("independent", "redundant", "theatre")}
+            for lab in ("independent", "redundant", "theatre", "invalid-degenerate")}
     modal = max(dist, key=dist.get)
     n_indep = dist["independent"]
-    rule_stability = f"{'YES' if modal == 'independent' else 'NO'}: independent in {n_indep}/{k} runs"
+    # A tie at 0 (e.g. all runs "invalid-degenerate") must NOT read as "independent" just
+    # because max() breaks ties by first-seen key — gate YES on independent being a UNIQUE,
+    # NONZERO max, not merely equal to whatever max() picked.
+    is_yes = n_indep > 0 and n_indep == max(dist.values())
+    rule_stability = f"{'YES' if is_yes else 'NO'}: independent in {n_indep}/{k} runs"
+    if dist["invalid-degenerate"]:
+        rule_stability += (f" (WARNING: {dist['invalid-degenerate']}/{k} runs "
+                           "INVALID-DEGENERATE — single verdict >=95%, independence claim "
+                           "not meaningful there)")
 
     # (c) bidirectional value, mean over runs (computed at the verdicts' lam=0 decisions)
     bd_keys = ("rescued_to_pass", "wrong_pass_escape", "correct_fail", "wrong_fail_overkill")
