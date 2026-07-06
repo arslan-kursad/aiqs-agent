@@ -206,6 +206,49 @@ export + crop** → `make decide` to verify ESCALATE∩good AND `n_dw` ≥ ~30 �
 full-vs-crop VLM experiment (Stage 3). capsule/screw = wiring/substrate probes only, NOT
 the headline.
 
+**Phase 2B — hard-substrate hunt + the two-arm full-vs-crop experiment. 🟡 ENGINEERING
+COMPLETE; HEADLINE EVIDENCE PENDING (needs a paid Kaggle-GPU session).** MVTec AD 2's
+download is form-gated (not scriptable) — see decision log — so substrate hunting moved to
+**VisA** (auto-downloads, no form).
+
+- [x] **Stage 0** — pre-AD2/AD-migration hygiene: canonical-run provenance cleanup, live
+      model-ID check (no silent downgrade), token-budget measured (<$0.50 single-pass).
+- [x] **Stage 1** — version-dispatched detector/data seam (anomalib 1.2 local /
+      2.x-GPU-host, zero regression to the pinned stack) + the anomaly-map **crop
+      instrument** (`src/aiqs/crop.py`, detector-free, locally testable; DIFFUSE is a
+      first-class outcome, not a crash).
+- [x] **Stage 2** — VisA substrate sweep (Kaggle GPU): **THREE categories pass the
+      pre-registered gate** (ESCALATE∩good AND n_dw ≥ 30): `capsules` (0.739 AUROC, 57/54),
+      `macaroni1` (0.815, 83/45), `macaroni2` (rejected — 87% escalation ≈ VLM-on-everything).
+      Ground = **capsules** (primary), `macaroni1` conditional on the capsules result.
+- [x] **Stage 3** — two-arm full-vs-crop experiment, PRE-REGISTERED escape-classification
+      rules (`vlm/reasoning_rules.py`, frozen before any real data), arm independence
+      enforced in code (fresh single-turn calls, no shared conversation), checkpoint/resume
+      (a crash loses ≤1 call), served-model stop guard, loud parse-failure fallback.
+      **Crop-instrument dry-run #1 was VOID** (anomalib-2.x map normalization defeated the
+      original diffuse test) — fixed and re-validated against real maps (19/20 crop, was
+      1/20). **Haiku rehearsal COMPLETE** ($1.77, 1090/1090 calls, checkpoint/resume/parse-
+      fallback all fired correctly in production): full-image Haiku is a rubber stamp
+      (545/545 "clean"); crop fixes only 2% of escapes, **94% classify SEMANTIC**
+      (pre-registered rules; labeling adequate). Confidence AUC 0.50, escapes 100%
+      stable-wrong — both replicate the 2A observation that self-reported confidence and
+      K-run agreement carry no independent signal.
+- [x] **Degeneracy guard** (added to the shared `eval/vlm_eval.py` BEFORE the headline run,
+      pre-registered `DEGENERATE_VERDICT_FRAC=0.95`): forces `"invalid-degenerate"` when one
+      verdict covers ≥95% of a run, closing the exact spurious-"independent" failure mode the
+      Haiku rehearsal exposed. Applies to every tier, including the not-yet-run headline —
+      a validity precondition, not a change to the locked Sonnet design.
+- [x] **ARM-C** — provider-agnostic `OpenAICompatibleVLMBackend` (the downward model-tier
+      lever), reusing the same crop instrument/checkpoint/served-model-guard machinery;
+      `aiqs-model-tier-report` for the cross-tier comparison table. Config-only roster swap
+      (`configs/free_vlm_roster.example.yaml`, documentation-only).
+- [ ] **PENDING — cannot be executed from this host:** the real claude-sonnet-4-6 headline
+      run and any real ARM-C free-tier run. Both need the VisA images + anomaly maps, which
+      exist only on the Kaggle GPU session that produced them (gitignored, not locally
+      present) — the detector/value file-interface split that enables local development also
+      means the real VLM call runs where the data lives. Ready-to-paste Kaggle cells handed
+      to the user; **115/115 tests green**, every identified engineering risk closed.
+
 ## Decision log
 
 - **2026-06-21** — Detector pinned to anomalib **1.2.0 / torch 2.2.2** (not latest
@@ -545,6 +588,104 @@ the headline.
   - **Program position:** the sonnet-4-6 headline run is now maximally de-risked (~$5, one
     command, resume-safe). Rehearsal prediction to test: if sonnet's escapes are ALSO
     semantic-dominated, the 2B lever is prompt/anchor design, not better pixels.
+- **2026-07-06** — **Degeneracy guard added to the SHARED `eval/vlm_eval.py`, BEFORE the
+  sonnet-4-6 headline run — a pre-registered validity check, not a Sonnet-design change.**
+  User directive: the guard exists because ANY tier (including the not-yet-run headline)
+  could produce a rubber-stamp verdict distribution that satisfies `Wilson-lo>P_IND_MIN` by
+  sheer luck of being "right" on whichever side the detector over-rejects — exactly what the
+  Haiku rehearsal exposed (545/545 "clean", formally "independent 5/5", substantively
+  meaningless). Applying the guard ONLY to non-canonical tiers would mean "the guard exists
+  but doesn't apply to the manifest it's meant to protect" — a partially-applied validity
+  guard is not a guard. This is read as a validity PRECONDITION established before the
+  headline run, not an exception to "don't touch the locked Sonnet design" (cost matrix,
+  classification rules, prompts, thresholds — all untouched).
+  - `DEGENERATE_VERDICT_FRAC = 0.95` (pre-registered, frozen before any headline data
+    exists): a run where one raw verdict (`defect`/`clean`/`unsure`) covers >=95% of calls
+    is forced to `RuleOutcome.label = "invalid-degenerate"` regardless of the computed
+    Wilson-lo/kappa. Operates on the RAW 3-way verdict, not the binary detector-comparison
+    call (an all-"unsure" run is degenerate too, even though `vlm_call_label`'s arbitrary
+    p_vlm-lean would hide that in the binary vector).
+  - **Bugfix found while auditing consumers (per user's explicit ask):** `evaluate()`'s
+    modal/stability aggregation used `max(dist, key=dist.get)` over a fixed 3-label dist —
+    if ALL K runs were invalid-degenerate (dist all zero for independent/redundant/theatre),
+    `max()`'s tie-break-by-insertion-order silently returned `"independent"`, printing a
+    nonsensical `"YES: independent in 0/5 runs"`. Fixed: `rule_stability`'s YES/NO now gates
+    on `n_indep > 0 AND n_indep == max(dist.values())` — a real, load-bearing correctness fix
+    that predates and is independent of the new label (it would have misfired on the OLD
+    3-label dist too, just needed the right degenerate-tie input to trigger).
+  - Checked every downstream consumer of `RuleOutcome.label`/`rule_distribution` (the ask):
+    `.is_independent` already handles any unknown label correctly (`== "independent"`);
+    `vlm_decide.py`'s two print sites are plain dict/string interpolation — the new label
+    surfaces automatically, no crash, no silent drop.
+  - `error_independence()` gained an optional `raw_verdicts` kwarg (default `None` — fully
+    backward compatible with the two existing unit tests that omit it); the one production
+    call site in `evaluate()` now passes `[s.vlm_verdict for s in states]`.
+  - 6 new tests (thresholds, forced-degenerate override, backward-compat, the tie-break
+    bugfix itself). 101/101 at this point in the session.
+- **2026-07-06** — **ARM-C: provider-agnostic OpenAI-compatible VLM backend — the downward
+  model-tier lever ($0 free tier -> frontier), Sonnet headline design untouched.** Same
+  Intelligent-APIs cost-scaling question the Haiku rehearsal opened: sweep model tier on the
+  IDENTICAL bucket/rules/matrix and find where the mechanism breaks.
+  - `vlm/backend_openai_compatible.py` (`OpenAICompatibleVLMBackend`): same call contract
+    (`backend(state) -> VLMVerdict`), same `VLMVerdict`/`parse_verdict` (no fork), same
+    served-model STOP guard (via the shared `model_guard` module, below), same crop
+    instrument (`vlm.crop_fn.make_crop_fn`, just with an OpenAI-shaped `encode_fn` — the crop
+    LOGIC never changes per provider). `base_url`/`model`/`api_key_env` are ALL
+    caller-supplied — swapping a free-tier roster entry (they rotate monthly) is a config
+    change, never a code change. **The API key is only ever taken as an ENV VAR NAME, never
+    a literal** — a YAML/CLI config can never carry a secret (the key-hygiene lesson).
+  - **Fork-prevention refactor (both backends now share):** `vlm/image_encode.py` (resize +
+    PNG-b64 — was duplicated 2x, now 3x-would-have-been) and `vlm/model_guard.py`
+    (`model_matches`/`assert_model_matches` — the "alias vs dated full id" logic). Fix the
+    resize edge case once, both backends get it; no silent drift between copies.
+  - **Rate limiting — two distinct mechanisms, not one:** a PROACTIVE `rpm_limit` sleep
+    (paces BEFORE hitting a free tier's RPM ceiling, so the ~500/day quota isn't burned on
+    429s) is separate from `max_retries` (the SDK's own exponential backoff AFTER a
+    transient error — same pattern as the Anthropic backend's `max_retries=8` fix).
+  - **Resume across day-boundaries is the EXISTING checkpoint/resume mechanism, not a new
+    scheduler** — a free-tier daily cap means an ARM-C run spans days; each day is a fresh
+    process that re-reads the JSONL checkpoint and continues. No daemon, no cron — this is
+    stated plainly rather than implied, per the project's honesty standard.
+  - **Checkpoint/results namespacing extended to (provider, model)**, not model alone
+    (`_model_suffix`/`_ckpt_path`/`write_results` gained an optional `provider` param,
+    default `"anthropic"` — EVERY existing call site and the already-pushed Haiku checkpoint
+    filename are byte-for-byte unaffected). A sonnet run can never resume from ARM-C answers
+    and vice versa; `_restore` now refuses on provider mismatch too.
+  - **`--smoke` mode** (2 real calls, 1 per arm, no checkpoint written) shakes out a NEW
+    provider/endpoint before spending real budget — served-model string, vision-content
+    acceptance, and usage-field population are VERIFIED per the project's "measure, don't
+    assume" rule, not assumed from Google AI Studio's/OpenRouter's documented shape.
+  - **`model_tier_report.py`** (`aiqs-model-tier-report`, `make model-tier-report`): scans a
+    run dir for every non-mock `vlm_crop_results*.csv`, reconstructs each variant's states as
+    lightweight rows and re-runs the UNCHANGED `eval.crop_eval.evaluate_two_arm` (100% reuse,
+    automatically degeneracy-guarded) to build a cross-tier table (verdict distribution /
+    rubber-stamp check, escape Δ, P/S/U mix, independence, tokens/call, wall-clock from
+    checkpoint timestamps). Walled off: `model_tier_report.md`, never `summary.md`.
+  - **Data-training acceptance (explicit, per user directive):** free tiers may train on
+    submitted inputs. Accepted because every image sent is a PUBLIC anomaly-detection
+    benchmark (VisA/MVTec), never proprietary data — recorded here as the standing
+    justification, not re-litigated per roster entry.
+  - `configs/free_vlm_roster.example.yaml`: documentation only (never parsed by code) —
+    example Google AI Studio / OpenRouter entries so a roster swap three weeks from now is a
+    copy-paste, not a memory exercise. `openai>=1.0,<2` pinned (resolves cleanly against the
+    existing stack; verified with `uv sync`).
+  - 14 + 8 new tests (shared-helper unit tests, backend guard/usage/crop-interop/throttle,
+    vlm_crop.py provider dispatch/checkpoint-provider-awareness/smoke-writes-no-checkpoint,
+    model_tier_report end-to-end on synthetic mock variants). One real bug caught by the
+    tests themselves: the report's glob pattern (`vlm_crop_results*.csv`) silently matched
+    ZERO mock-prefixed files (`mock_vlm_crop_results...`) because glob has no "contains" mode
+    without a leading wildcard — fixed to `*vlm_crop_results*.csv`. 115/115 at session end.
+  - **What remains PENDING, stated plainly:** the actual PAID sonnet-4-6 headline run and any
+    real ARM-C free-tier run have NOT been executed. This local Intel-mac host has no GPU, no
+    installable anomalib 2.x, and no local copy of the VisA images or the anomaly maps (both
+    gitignored, living only on the Kaggle session that produced them) — the detector/value
+    file-interface architecture that makes local development possible ALSO means the real VLM
+    call must run where the maps and images live. Every engineering risk class identified
+    across the dry-run + Haiku rehearsal (crop never engaging, 529 storms, mid-run data loss,
+    parse-failure lockup, silent model downgrade, spurious independence) is now closed in
+    code; the ready-to-paste Kaggle cells for the sonnet-4-6 headline run were handed to the
+    user in-session. This entry is the record of that boundary, not a claim that Phase 2B's
+    headline evidence exists yet.
 
 ## How Phase 1 extends the eval contract
 

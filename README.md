@@ -46,7 +46,7 @@ keeps one codebase working against both stacks.
 | 0 | Detection baseline + eval backbone (PatchCore, image/pixel metrics) | ✅ complete |
 | 1 | Calibrated, cost-aware, abstaining decision layer + operating envelope | ✅ complete — **first real win on VisA candle: 11–13% cheaper than a tuned threshold** |
 | 2A | VLM second-look backbone (ESCALATE-only, pre-registered independence test) | ✅ complete (mock-tested, live model-ID verified) |
-| 2B | Hard-substrate hunt + **two-arm full-vs-crop experiment** | 🟡 in progress — substrate found (VisA), instrument validated, **haiku rehearsal done**, sonnet headline run pending |
+| 2B | Hard-substrate hunt + **two-arm full-vs-crop experiment** | 🟡 engineering complete — substrate found (VisA), instrument validated, **haiku rehearsal done**, degeneracy guard + ARM-C (model-tier lever) built; **sonnet-4-6 headline run pending** (needs a GPU/data-bearing host — see below) |
 
 ## Key findings so far
 
@@ -61,8 +61,21 @@ keeps one codebase working against both stacks.
   **rubber stamp**: "clean" on 545/545 full-image calls; the anomaly-map crop fixes only
   2% of escapes while **94% classify as SEMANTIC** under pre-registered rules — the model
   *sees* the flagged region and calls it normal. Escapes are 100% stable-wrong and
-  self-reported confidence carries no signal (AUC 0.50). Rehearsal-grade evidence; the
-  locked-model (claude-sonnet-4-6) headline run is next.
+  self-reported confidence carries no signal (AUC 0.50). Rehearsal-grade evidence, not the
+  headline — it exposed a real gap (a rubber-stamp run can pass the independence test by
+  luck), closed by a **degeneracy guard** added to the shared eval code *before* the
+  headline run (pre-registered, applies to every model tier).
+- **The model-tier lever (ARM-C).** A provider-agnostic backend (any OpenAI-compatible
+  endpoint — Google AI Studio, OpenRouter, ...) reuses the identical bucket/crop/checkpoint
+  machinery to sweep cost from $0 to frontier; swapping a free-tier roster entry is a
+  config change, never a code change (`aiqs-model-tier-report` for the cross-tier table).
+  Engineering complete; no real run executed yet.
+- **What's pending, honestly:** the real claude-sonnet-4-6 headline run (and any real
+  ARM-C run) need the VisA images + anomaly maps, which live only on the GPU host that
+  produced them — this local stack is intentionally detector-free (see §1). Every
+  identified engineering risk (crop not engaging, API overload storms, mid-run data loss,
+  parse-failure lockup, silent model downgrade, spurious independence) is closed in code
+  and tested; the run itself is one command away on a GPU/data-bearing session.
 
 ## Quickstart
 
@@ -72,10 +85,15 @@ make smoke                   # fast end-to-end sanity run
 make baseline CATEGORY=screw # train + eval, writes results/
 make decide                  # Phase-1 adjudication on the latest run
 make vlm RUN=<id> MOCK=1     # Phase-2A VLM second-look (mock = no API)
-make vlm-crop RUN=<id>       # Phase-2B two-arm full-vs-crop experiment
+make vlm-crop RUN=<id>       # Phase-2B two-arm full-vs-crop experiment (Anthropic, locked)
+make model-tier-report RUN=<id>  # cross-tier comparison table (Haiku/Sonnet/ARM-C)
 make sim                     # SYNTHETIC machinery validation (walled off)
-make test                    # 83 unit tests (all API calls mocked)
+make test                    # 115 unit tests (all API calls mocked)
 ```
+
+ARM-C (a free-tier model-tier run) is `aiqs-vlm-crop` with `--provider openai_compatible
+--model <m> --base-url <u> --api-key-env <e>` — see
+[`configs/free_vlm_roster.example.yaml`](configs/free_vlm_roster.example.yaml).
 
 GPU detector rounds (anomalib 2.x, VisA/MVTec-AD2) run on a CUDA host:
 see [`requirements-ad2.txt`](requirements-ad2.txt) and
@@ -95,7 +113,10 @@ The credibility of a null result is this project's core asset. Enforced in code,
 - **Walled-off mocks & synthetic data** — `mock_*` artifacts are gitignored and can never
   touch real evidence files.
 - **Checkpoint/resume** — every paid API call is flushed to disk; a crash loses at most
-  one call and a re-run never re-bills.
+  one call and a re-run never re-bills. Namespaced by (provider, model) so a rehearsal or
+  a free-tier ARM-C run can never contaminate the locked headline run.
+- **Degeneracy guard** — a rubber-stamp verdict distribution (≥95% one answer) is forced
+  to an explicit `invalid-degenerate` label, never counted as a spurious "independent".
 - **Honest nulls in the log** — the weak-detector null, the saturated-substrate finding,
   and the voided first dry-run are all committed, with root causes.
 
@@ -108,12 +129,18 @@ src/aiqs/
   data.py         datamodules: MVTec (1.2) · MVTecAD/AD2/VisA (2.x)
   crop.py         anomaly-map peak → high-res crop instrument (diffuse-aware)
   decide.py       Phase-1 calibration + cost policy + operating-envelope report
-  vlm/            Phase-2 VLM second-look (backend, abstain rule, pre-registered rules)
-  vlm_crop.py     Phase-2B two-arm experiment runner (checkpoint/resume)
-  eval/           metrics, persistence, decision + VLM + two-arm evaluation
+  vlm/            Phase-2 VLM second-look — backend.py (Anthropic, locked headline),
+                  backend_openai_compatible.py (ARM-C, any OpenAI-compatible provider),
+                  image_encode.py / model_guard.py (shared, fork-prevention), abstain
+                  rule, reasoning_rules.py (pre-registered escape classification)
+  vlm_crop.py     Phase-2B two-arm experiment runner (checkpoint/resume, --smoke)
+  model_tier_report.py  cross-tier comparison (Haiku/Sonnet/ARM-C), walled off from summary.md
+  eval/           metrics, persistence, decision + VLM (incl. the degeneracy guard) +
+                  two-arm evaluation
 scripts/          GPU runner (run_ad2_gpu.py) · local diagnostics (verify_vlm_local.py)
 results/          committed evidence: metrics.csv, decisions.csv, per-run summaries + plots
-tests/            83 tests — decision policy, calibration, crop, two-arm, guards (API mocked)
+tests/            115 tests — decision policy, calibration, crop, two-arm, guards, ARM-C
+                  backend, model-tier report (API mocked)
 docs/             architecture & experiment documentation
 ```
 

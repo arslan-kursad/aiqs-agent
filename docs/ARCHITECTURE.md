@@ -93,8 +93,19 @@ without re-billing.
 | Guard | Where | Effect |
 |---|---|---|
 | Substrate guard | `vlm/substrate.py` | ESCALATE∩good < 15 → refuse to run; < 30 → underpowered warning |
-| Served-model stop | `vlm/backend.py` | any call served ≠ requested model → abort (silent-downgrade lesson) |
+| Served-model stop | `vlm/model_guard.py` (shared by both backends) | any call served ≠ requested model → abort (silent-downgrade lesson) |
+| Degeneracy guard | `eval/vlm_eval.py` | one verdict ≥95% of a run → `invalid-degenerate`, never a spurious "independent" |
 | Honesty guard | `eval/decision.py` | signal-free scores → refuse a false-positive headline |
 | Mock wall | `.gitignore` + naming | `mock_*` artifacts can never enter evidence files |
-| Checkpoint integrity | `vlm_crop.py` | refuses resume across a different bucket or model |
+| Checkpoint integrity | `vlm_crop.py` | refuses resume across a different bucket, model, **or provider** |
 | Pre-registered rules | `vlm/reasoning_rules.py` | frozen classification; UNCLASSIFIED ceiling instead of post-hoc widening |
+
+## 5. ARM-C — the model-tier lever
+
+`vlm/backend_openai_compatible.py` implements the SAME call contract
+(`backend(state) -> VLMVerdict`) behind any OpenAI-Chat-Completions-compatible endpoint,
+so the two-arm experiment (§3) and all its guards (§4) run unchanged against a $0 free
+tier through the frontier headline model. `base_url` / `model` / `api_key_env` are
+caller-supplied — a roster swap is a config change, not a code change. Rate limiting is
+two independent mechanisms: a proactive `rpm_limit` pace (before hitting a free tier's
+ceiling) and the SDK's own retry/backoff (after a transient error) — see CLAUDE.md.

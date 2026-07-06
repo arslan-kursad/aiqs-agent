@@ -80,9 +80,72 @@ borderline industrial images, and its failures are **semantic, not perceptual** 
 the flagged region and calls it normal variation. Better pixels (the crop) do not fix a
 semantic failure.
 
-## 5. Next — the locked headline run
+## 5. Degeneracy guard (added before the headline run)
 
-`claude-sonnet-4-6`, same ground, same frozen rules, ~$5, fully resume-safe. The
-rehearsal sharpens the question it must answer: **are sonnet's escapes also
-semantic-dominated?** If yes, the Phase-2B lever is prompt/anchor design, not image
-fidelity — and that redirects the roadmap.
+The Haiku rehearsal's "independent in 5/5 runs" was formally correct and substantively
+meaningless — a 545/545 rubber stamp satisfies `Wilson-lo > 0.50` by luck of being "right"
+on whichever side the detector over-rejects. `eval/vlm_eval.py` now forces
+`"invalid-degenerate"` whenever one raw verdict covers ≥95% of a run
+(`DEGENERATE_VERDICT_FRAC`, pre-registered before any headline data exists). This applies
+to **every** tier, including the not-yet-run sonnet-4-6 headline — full rationale and the
+tie-break bugfix it surfaced are in [CLAUDE.md](../CLAUDE.md) (2026-07-06 entries).
+
+## 6. ARM-C — the model-tier lever
+
+A provider-agnostic `OpenAICompatibleVLMBackend` (Google AI Studio, OpenRouter, ...) reuses
+the identical bucket, crop instrument, checkpoint/resume, and served-model guard as the
+Anthropic path — swapping a free-tier roster entry is a config change (`--base-url
+--model --api-key-env`), never a code change. See
+[`configs/free_vlm_roster.example.yaml`](../configs/free_vlm_roster.example.yaml) and
+CLAUDE.md for the full design (rate-limit/resume/data-training-acceptance rationale). No
+real ARM-C run has been executed yet — engineering only, pending a GPU/data-bearing host.
+
+## 7. Model-tier comparison (fill in once real runs exist)
+
+`aiqs-model-tier-report` (`make model-tier-report RUN=<id>`) scans a run dir for every
+real `vlm_crop_results*.csv` and reconstructs the full two-arm evaluation per tier —
+verdict distribution (rubber-stamp check), escape Δ, P/S/U classification, the
+degeneracy-guarded independence rule, tokens/call, and wall-clock. Table below is a
+**template** — fill with real numbers as tiers complete, never with placeholders passed
+off as data:
+
+| model | provider | escape A→B Δ | P/S/U | independence A / B | tokens/call A / B | wall-clock |
+|---|---|---|---|---|---|---|
+| claude-haiku-4-5 | anthropic | 1.000→0.962 (Δ+0.038) | 5/235/10 | invalid-degenerate (rubber stamp) both arms | 809/107 → 1353/110 | ~minutes (single Kaggle session) |
+| claude-sonnet-4-6 | anthropic | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| (ARM-C free-tier) | openai_compatible | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+
+## 8. Next — the locked headline run
+
+`claude-sonnet-4-6`, same ground, same frozen rules, ~$5, fully resume-safe (checkpoint
+survives a crash or a killed Kaggle session — re-running the same command continues
+without re-billing a completed call). The rehearsal sharpens the question it must answer:
+**are sonnet's escapes also semantic-dominated?** If yes, the Phase-2B lever is
+prompt/anchor design, not image fidelity — and that redirects the roadmap.
+
+## 9. Stage-4 verdict — template (fill with numbers, do not re-narrate after seeing them)
+
+Exactly one of the three frames below gets filled in once the sonnet-4-6 headline (and,
+if triggered, the macaroni1 second ground) completes. The frame is chosen by the data, not
+the other way around — this section exists precisely so the verdict isn't re-litigated
+after the numbers are known.
+
+**Frame A — Positive.** *"Sonnet's escapes are NOT rubber-stamp/semantic-dominated: escape
+rate moved [X]→[Y] (Δ=[D]) with the crop, PERCEPTION classified at [P]% (vs Haiku's 2%),
+Wilson-lo=[W] (powered, n_dw=54) exceeds 0.50 non-degenerate. The full-vs-crop hypothesis
+is CONFIRMED at the headline tier: a second look with the right image adds independent
+signal beyond the detector."* → writeup + final commit + merge.
+
+**Frame B — Null / semantic-dominant (the Haiku pattern replicates).** *"Sonnet's escapes
+are ALSO semantic-dominated: [S]% classify SEMANTIC (vs Haiku's 94%), crop moves escape by
+only [D] (vs Haiku's 0.038), independence is [invalid-degenerate / theatre] at the
+headline tier too. The Phase-2B lever is NOT image fidelity — better pixels do not fix a
+model that sees the flagged region and calls it normal. The lever is prompt/anchor design
+or a fundamentally different verification strategy."* → informative negative result,
+writeup + merge (pre-registered criteria make this a real finding, not a failure).
+
+**Frame C — Partial.** *"Crop reduced escape by [D], below the pre-registered
+[threshold]; independence is [redundant/independent] but [caveat]. Cost-aware abstention
+gains a bounded, non-zero lever — a new operating-envelope boundary point, not a clean
+win."* → envelope update + next-step proposal (prompt/few-shot iteration), not a final
+verdict either way.
