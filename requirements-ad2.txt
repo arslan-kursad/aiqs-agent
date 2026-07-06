@@ -1,0 +1,37 @@
+# Phase-2B GPU-host detector stack (anomalib 2.x) — a SEPARATE environment.
+#
+# This is NOT a `uv` optional-extra. A co-locked extra in pyproject.toml is INFEASIBLE:
+# the pinned local base caps are mutually exclusive with anomalib 2.x. Measured:
+#
+#   $ printf 'torchmetrics<1.5\nanomalib>=2.2\n' | uv pip compile -
+#   x No solution found ... anomalib>=2.2.0 depends on torchmetrics>=1.8.2,
+#     and because you require torchmetrics<1.5 ... requirements are unsatisfiable.
+#
+# (Same story for numpy<2 and lightning<2.5.) The base exists to keep the anomalib-1.2
+# stack installable on the Intel-mac (no x86_64-macOS torch wheel past 2.2.2); anomalib 2.x
+# only ever runs on a CUDA/arm64 GPU host. So install THIS on the GPU host:
+#
+#   pip install -r requirements-ad2.txt        # anomalib 2.x (pulls its own torch)
+#   export PYTHONPATH="$PWD/src"               # add the `aiqs` package on the path
+#
+# Use PYTHONPATH, NOT `pip install -e .`: the base `requires-python = ">=3.11,<3.12"` cap
+# (a local-3.11-stack artifact) makes `pip install -e .` REJECT a 3.12 GPU host (e.g. Colab
+# is 3.12: "Package 'aiqs' requires a different Python"). PYTHONPATH sidesteps both that cap
+# and pip's build step. The detector code (detector.py/data.py) dispatches to
+# `_detector_v2`/`_data_v2` automatically once anomalib 2.x is the installed version.
+#
+# On Colab/Kaggle (each `!` line is a fresh shell — use the magics so state persists):
+#   %cd /content/aiqs-agent
+#   %env PYTHONPATH=/content/aiqs-agent/src
+#   !pip install -r requirements-ad2.txt
+#   !python scripts/run_ad2_gpu.py --category sheet_metal --smoke
+#
+# CLEANER LONG-TERM FIX (deferred — a base refactor, propose→confirm): make the detector
+# stack itself an extra (base = the detector-free numpy/sklearn decision+VLM layer; `det1`
+# and `ad2` as conflicting extras via `[tool.uv] conflicts`). That matches the thesis (the
+# value layer needs no torch) and would let `uv sync --extra ad2` work natively.
+
+anomalib>=2.2,<3
+scikit-learn>=1.3
+huggingface-hub>=0.20
+python-dotenv>=1.0

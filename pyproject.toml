@@ -32,6 +32,19 @@ dependencies = [
     "ollama>=0.3,<0.4",
     "requests>=2.28",
     "huggingface-hub>=0.20",
+    # Phase 2A — first LLM component (VLM second-look on the ESCALATE bucket).
+    # pydantic is already v2.x via anomalib's transitive deps (desk-checked GREEN);
+    # anthropic + langfuse are pydantic-v2. langfuse pulls OpenTelemetry which caps
+    # protobuf <7 (harmless downgrade for lightning/tensorboard). NO langgraph in 2A:
+    # a single-node/single-pass seam does not justify it (see CLAUDE.md, E1).
+    "anthropic>=0.40",
+    "langfuse>=3,<5",
+    "pydantic>=2,<3",
+    # Phase 2B ARM-C — provider-agnostic model-tier lever (backend_openai_compatible.py).
+    # Any OpenAI-Chat-Completions-compatible endpoint (Google AI Studio, OpenRouter, ...);
+    # base_url/model/api_key_env are all caller-supplied, so a free-tier roster swap is a
+    # config change, never a code change.
+    "openai>=1.0,<2",
 ]
 
 [project.scripts]
@@ -40,6 +53,9 @@ aiqs-train = "aiqs.train:main"
 aiqs-eval = "aiqs.evaluate:main"
 aiqs-decide = "aiqs.decide:main"
 aiqs-sim-decision = "aiqs.simulate_decision:main"
+aiqs-vlm = "aiqs.vlm_decide:main"
+aiqs-vlm-crop = "aiqs.vlm_crop:main"
+aiqs-model-tier-report = "aiqs.model_tier_report:main"
 
 # Dev-only tooling. pytest is a test dependency (not shipped/imported by the core);
 # kept out of [project.dependencies] so it never enters the runtime resolve. Pure

@@ -60,6 +60,21 @@ class OutputConfig:
 
 
 @dataclass
+class CropConfig:
+    """Phase-2B anomaly-map crop instrument (see src/aiqs/crop.py).
+
+    ``enabled`` is the full-image-only (False) vs full-image+crop (True) switch for the
+    Stage-3 two-arm experiment. All thresholds are detector-free knobs tuned offline.
+    """
+    enabled: bool = False
+    peak_top_frac: float = 0.01           # peak candidates = top this fraction of map pixels
+    peak_fraction: float = 0.5            # floor on the normalized threshold (guards sparse maps)
+    padding: float = 0.25                 # bbox padding as a fraction of the bbox size
+    min_size: int = 64                    # minimum crop side, in ORIGINAL-image pixels
+    diffuse_area_frac: float = 0.5        # peak-region BBOX over this frac of the frame -> diffuse
+
+
+@dataclass
 class Config:
     seed: int = 42
     category: str = "screw"
@@ -67,6 +82,7 @@ class Config:
     model: ModelConfig = field(default_factory=ModelConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
+    crop: CropConfig = field(default_factory=CropConfig)
 
     # ---- run identity (derived) -------------------------------------------
     @property
