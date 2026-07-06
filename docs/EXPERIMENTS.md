@@ -149,37 +149,66 @@ signal, not an artifact:**
   goes 0.038 (Haiku) → 0.385 (Sonnet). The second-look lever is tier-sensitive — inert at
   $0, load-bearing at the frontier.
 
-**CAVEAT (Frame C) — two honest qualifications, both from pre-registered criteria:**
-1. **The crop is not a free win — it trades overkill-reduction for escape-reduction.** The
-   Phase-1 layer's *core value* is rescuing goods (cutting false rejects). Full-image
-   Sonnet already rescued 54/57 goods (overkill 1, escalate 2). Adding the crop makes it
-   more suspicious *everywhere*: good-rescue drops **54 → 30**, good-overkill rises
-   **1 → 7**, good-escalation rises **2 → 20** — while defect-escapes fall 26 → 6 and
-   correct-fails rise 11 → 29. So the crop is a **defect-recall lever bought with
-   overkill**: it catches more defects AND flags more good parts. Whether that trade is
-   worth it is a cost-matrix question (escape-dominant regimes: yes; overkill-dominant: no)
-   — exactly the operating-envelope framing Phase 1 established.
-2. **The perception-vs-semantic question cannot be cleanly resolved by rule.** Where
-   classifiable, PERCEPTION leads SEMANTIC **48 vs 24** — the *reverse* of Haiku's 5/235,
-   suggesting Sonnet's failures are more perceptual (fixed by better pixels) than semantic.
-   BUT unclassified = 58/130 = **45% > the pre-registered 0.30 ceiling → labeling declared
-   INADEQUATE (human read required)**; the rules are NOT widened post hoc. The unclassified
-   mass is mostly crop-induced *uncertainty* (clean → unsure rather than clean → defect):
-   the crop often makes Sonnet abstain, not flip to defect, which reduces escapes (unsure
-   routes to a human) without a clean perceptual "aha". So: perception-leaning, but the
-   honest verdict on mechanism is "human adjudication of the 45% is required before
-   claiming perception-dominance."
+**THE COST VERDICT (the north-star metric — this project optimizes a business cost
+function, not a detection metric like escape rate).** Realized cost/item on the 109-item
+bucket, re-deciding the stored provisional `p_vlm` under each matrix and importance-
+weighting to each prevalence (same `eval.decision` machinery the Phase-1 policy uses —
+`make model-tier-report` regenerates it; zero API):
 
-**Replicated across tiers (robustness):** self-reported confidence does not separate
-correct from wrong (AUC 0.49, matching Haiku 0.50 and the 2A observation), and full-image
-escapes are 100% stable-wrong (26/26) — K-run agreement is not an abstain signal at any
-tier. Only the *crop* moves them.
+| matrix + prevalence | naive | ARM-A | ARM-B | human-review | best | crop vs full |
+|---|---|---|---|---|---|---|
+| 10/3/1 + native (48% def) | 1.486 | 2.569 | **1.088** | 1.00 | human-review | **crop wins** |
+| 10/3/1 + 2% | 0.196 | **0.192** | 0.738 | 1.00 | ARM-A | crop loses |
+| 100/3/1 + native | 1.486 | 0.917 | **0.870** | 1.00 | **ARM-B** | **crop wins** |
+| 100/3/1 + 2% | 1.898 | **1.030** | 1.237 | 1.00 | human-review | crop loses |
+
+**Read this as the closing argument, not a footnote.** The escape-rate headline (Δ+0.385)
+is a *detection* metric; on the *cost* metric the crop's verdict is **regime-conditional**:
+
+- **Crop wins when defectives are common** (native ~48%): catching them is worth the
+  overkill it adds (10/3/1: 2.569→1.088; 100/3/1: 0.917→0.870).
+- **Crop loses at production prevalence** (2%): the overkill it adds is applied to a 98%
+  good stream and dominates the now-tiny escape savings (10/3/1: 0.192→0.738).
+- **The crop is decisively best — beating naive, full-VLM, AND human review — in exactly
+  ONE cell: 100/3/1 + native** (escape-dominant costs + defects common). Elsewhere either
+  full-image VLM or just-review-everything is cheaper.
+
+This is the thesis closing on itself: **the VLM-crop layer inherits Phase-1's operating
+envelope verbatim.** The decision layer — whether the mechanism is Venn-Abers calibration
+or a VLM second-look — *never wins universally; it tells you which regime you are in, and
+we measured the map.*
+
+**Why (the deepest finding, elevated from a footnote): the crop reduces escapes by inducing
+better-placed DOUBT, not by producing better answers.** Of the escapes the crop fixes, the
+mass moves clean→**unsure** (routes to a human), not clean→defect. The second-look's value
+is not a more correct verdict — it is *calibrated suspicion, placed where the detector was
+wrong*. That is precisely what Phase-1's Venn-Abers + cost matrix did (manufacture
+calibrated doubt and route it to a human) — and it is why the cost verdict is the honest
+one: that doubt is not free (each escalation costs review), so its worth is, again, a
+cost-matrix question.
+
+**The overkill trade, in raw counts (the mechanism behind the cost table):** full-image
+Sonnet rescued 54/57 goods (overkill 1, escalate 2). The crop makes it suspicious
+everywhere — good-rescue **54→30**, good-overkill **1→7**, good-escalate **2→20** — while
+defect-escape **26→6** and correct-fail **11→29**. A recall lever bought with overkill.
+
+**Labeling caveat (pre-registered, not widened):** where classifiable, PERCEPTION leads
+SEMANTIC **48 vs 24** (the reverse of Haiku's 5/235), suggesting Sonnet's failures are more
+perceptual. BUT unclassified = 58/130 = **45% > the frozen 0.30 ceiling → labeling declared
+INADEQUATE; a blind human read is required** before claiming perception-dominance (protocol
+pre-registered in [CLAUDE.md](../CLAUDE.md); blinded data at
+`results/runs/<id>/blind_read.csv`). Consistent with the "better-placed doubt" finding, the
+unclassified mass is crop-induced *uncertainty* (clean→unsure), not clean→defect flips.
+
+**Replicated across tiers (robustness):** self-reported confidence does not separate correct
+from wrong (AUC 0.49, matching Haiku 0.50 and the 2A observation); full-image escapes are
+100% stable-wrong (26/26) — K-run agreement is not an abstain signal at any tier. Only the
+*crop* moves them.
 
 **Bottom line.** The thesis — *a cost-aware, abstaining decision layer plus a targeted VLM
-second-look adds production value* — holds at the frontier tier: the crop delivers a real,
-powered, independent escape-reduction. But the headline sharpens rather than simplifies the
-picture: the second-look is a **recall lever with an overkill cost**, and its dominant
-failure mode needs human labeling to call perception-vs-semantic. Next steps (not blockers
-for the finding): (a) an ARM-C free-tier point to fill the cost-scaling curve between the
-two anchors; (b) a human read of the 45% unclassified; (c) a cost-matrix sweep to locate
-where the crop's recall-gain beats its overkill-cost.
+second-look adds production value* — is CONFIRMED at the frontier tier, and sharpened: the
+second-look delivers a real, powered, independent escape-reduction, but its economic value
+is regime-conditional (the operating envelope), its mechanism is better-placed doubt rather
+than better answers, and the perception-vs-semantic split needs a human read. Follow-ups
+(post-merge, non-blocking): an ARM-C free-tier point to fill the cost-scaling curve; the
+blind read of the 45% unclassified; optionally the macaroni1 second ground.

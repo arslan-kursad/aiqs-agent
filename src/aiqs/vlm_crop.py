@@ -385,6 +385,20 @@ def summary_lines(res: ce.CropExperiment, comp: dict) -> list[str]:
          f"- **Tokens/call** A in/out {res.tokens_a['tokens_in_mean']:.0f}/"
          f"{res.tokens_a['tokens_out_mean']:.0f} | B {res.tokens_b['tokens_in_mean']:.0f}/"
          f"{res.tokens_b['tokens_out_mean']:.0f}.", ""]
+    if res.cost_regimes:
+        L += ["**COST VERDICT** (realized cost/item on the bucket; the north-star metric — "
+              "NAIVE=detector threshold, A=full VLM, B=full+crop, human=review-everything):",
+              "", "| matrix + prevalence | naive | ARM-A | ARM-B | human | best | crop vs full |",
+              "|---|---|---|---|---|---|---|"]
+        for r in res.cost_regimes:
+            L.append(f"| {r['matrix']} + {r['prevalence']} | {r['naive']:.3f} | "
+                    f"{r['arm_a']:.3f} | {r['arm_b']:.3f} | {r['human_floor']:.2f} | "
+                    f"**{r['best']}** | {r['crop_vs_full']} |")
+        L += ["", "_Crop's value is PREVALENCE-CONDITIONAL: it wins where defectives are "
+              "common (catching them is worth the overkill cost) and loses at low production "
+              "prevalence (overkill on the good stream dominates the shrinking escape "
+              "savings). The VLM layer inherits Phase-1's operating envelope — no universal "
+              "win, it says which regime you are in._", ""]
     if res.warnings:
         L += ["**Guard warnings:**"] + [f"- {w}" for w in res.warnings] + [""]
     return L

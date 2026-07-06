@@ -21,3 +21,14 @@ One row per VLM tier tested on this bucket (Haiku rehearsal, the claude-sonnet-4
 - **2A replication (ARM-A, descriptive):** good-rescue 0.95, defect-escape 0.50, confidence-separation AUC 0.49 (~0.5 = does not separate).
 - **Tokens/call** A in/out 810/101 | B 1354/273.
 
+**COST VERDICT** (realized cost/item on the bucket; the north-star metric — NAIVE=detector threshold, A=full VLM, B=full+crop, human=review-everything):
+
+| matrix + prevalence | naive | ARM-A | ARM-B | human | best | crop vs full |
+|---|---|---|---|---|---|---|
+| 10/3/1 + native | 1.486 | 2.569 | 1.088 | 1.00 | **human-review** | crop-wins |
+| 10/3/1 + 2% | 0.196 | 0.192 | 0.738 | 1.00 | **ARM-A** | crop-loses |
+| 100/3/1 + native | 1.486 | 0.917 | 0.870 | 1.00 | **ARM-B** | crop-wins |
+| 100/3/1 + 2% | 1.898 | 1.030 | 1.237 | 1.00 | **human-review** | crop-loses |
+
+_Crop's value is PREVALENCE-CONDITIONAL: it wins where defectives are common (catching them is worth the overkill cost) and loses at low production prevalence (overkill on the good stream dominates the shrinking escape savings). The VLM layer inherits Phase-1's operating envelope — no universal win, it says which regime you are in._
+

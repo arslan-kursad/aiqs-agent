@@ -702,6 +702,51 @@ decision log — so substrate hunting moved to **VisA** (auto-downloads, no form
     user in-session. This entry is the record of that boundary, not a claim that Phase 2B's
     headline evidence exists yet.
 
+- **2026-07-06** — **Phase-2B COST VERDICT (the closing move, zero API) + BLIND-READ protocol
+  (pre-registered before the read).** User directive: the escape-rate headline (Δ+0.385) is a
+  *detection* metric; making it the verdict while filing the cost analysis under "optional"
+  would revert to the proxy-metric reporting this project exists to reject. The cost verdict is
+  the north-star deliverable.
+  - **Cost verdict — `eval/crop_eval.cost_regimes()` (tested, reproducible via
+    `make model-tier-report`).** Re-decides the stored provisional `p_vlm` under {10/3/1,
+    100/3/1} x {native, 2%}, importance-weighted, reusing the SAME `eval.decision` machinery
+    the Phase-1 policy uses (inheritance, not a fork). Result (cost/item on the 109 bucket):
+    crop WINS at native prevalence (10/3/1 2.569->1.088; 100/3/1 0.917->0.870), LOSES at 2%
+    (10/3/1 0.192->0.738) — decisively best (beats naive/full-VLM/human) in exactly ONE cell,
+    100/3/1+native. **The VLM-crop layer inherits Phase-1's operating envelope verbatim: no
+    universal win, it says which regime you are in.** Deepest finding (elevated from a
+    footnote): the crop reduces escapes by inducing better-placed DOUBT (clean->unsure, routed
+    to a human), not better answers — calibrated suspicion placed where the detector was wrong,
+    exactly what Venn-Abers+cost-matrix did in Phase 1, and why the doubt is not free (each
+    escalation costs review). Two implementation bugs caught + fixed while building it:
+    `np.array([Decision...])` coerces the str-Enum to its repr and breaks `decision_metrics`'
+    `isinstance` (pass a plain list); `model_tier_report._Row` lacked `detector_score` (the
+    naive baseline needs it).
+  - **BLIND-READ protocol (pre-registered, frozen BEFORE any reading — the anti-p-hacking
+    condition applied to the human-labeling stage).** The rule declared the escape labeling
+    INADEQUATE (unclassified 45% > 0.30 ceiling); the supplementary adjudication is a BLIND
+    human read, NOT an LLM judge (an AI reading these would be exactly the judge the 2A design
+    rejected, and not blind). `scripts/make_blind_read.py` emits `blind_read.csv` (blind_id +
+    the second-look REASONING text + an empty `label` column; NO ground-truth, NO arm, NO
+    verdict; deterministic shuffle) and a separate `blind_read_key.csv` (opened ONLY after
+    labeling, to score). **Task (frozen):** label each reasoning `perception` (describes
+    noticing a real defect/damage/anomaly in the flagged region), `semantic` (acknowledges the
+    region but judges it acceptable/normal/an artifact), or `unclear` (neither — hedged/vague).
+    **Scoring (frozen):** join on blind_id, report the perception:semantic:unclear split among
+    the 19 unique unclassified escapes; combine with the rule's 48/24 to state the refined
+    perception-vs-semantic picture. The human read REFINES but does NOT override the machine
+    result — the rule's "inadequate" verdict stands as the automated finding. Execution is the
+    user's (a human), post-merge; the instrument + protocol are frozen now so the read can be
+    done without any post-hoc discretion.
+- **2026-07-06** — **PHASE 2 COMPLETE — branch `phase2a-vlm-second-look` merged to `main`.**
+  Headline evidence obtained (sonnet-4-6, capsules, $6.60): crop cuts escape 0.500->0.115 with
+  powered non-degenerate independence, cost verdict maps the regime-conditional win, mechanism
+  is better-placed doubt, labeling caveat honestly flagged + a pre-registered blind read staged.
+  Full write-up in docs/EXPERIMENTS.md §9. 116/116 tests. Non-blocking follow-ups (post-merge,
+  optional): ARM-C free-tier cost-scaling point; the blind human read; macaroni1 second ground
+  (user's explicit call: PROBABLY SKIP — marginal portfolio value below the opportunity cost of
+  interview prep; the project is "proven and narratable", which it now is).
+
 ## How Phase 1 extends the eval contract
 
 Phase 0 = detection metrics (`metrics.py`) + persistence (`results.py`). Phase 1 layers

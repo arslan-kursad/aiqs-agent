@@ -48,6 +48,7 @@ class _Row:
     vlm_reasoning: str
     final_decision: Decision
     abstained: bool
+    detector_score: float = 0.0           # needed by cost_regimes' naive baseline
     tokens_in: float | None = None
     tokens_out: float | None = None
     anomaly_map_path: str | None = None   # unused by crop_eval; kept for interface parity
@@ -83,6 +84,7 @@ def _rows_from_df(df: pd.DataFrame, arm: str, item_order: list[str]) -> list[lis
             vlm_reasoning=str(run_df.loc[path, "vlm_reasoning"]),
             final_decision=Decision(run_df.loc[path, "final_decision"]),
             abstained=bool(run_df.loc[path, "abstained"]),
+            detector_score=float(run_df.loc[path, "detector_score"]),
             tokens_in=_none_if_nan(run_df.loc[path].get("tokens_in")),
             tokens_out=_none_if_nan(run_df.loc[path].get("tokens_out")),
         ) for path in item_order]

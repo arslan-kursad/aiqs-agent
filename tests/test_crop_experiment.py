@@ -354,6 +354,30 @@ def test_two_arm_mock_end_to_end(synthetic_run):
     assert res.arm_a.k_runs == 2 and res.arm_b.k_runs == 2
     assert 0 <= res.paired["escape_rate_a_mean"] <= 1
     assert comp["escalate_good"] >= 15
+    # the cost verdict populates all four (matrix x prevalence) regime cells.
+    assert len(res.cost_regimes) == 4
+    assert {r["matrix"] for r in res.cost_regimes} == {"10/3/1", "100/3/1"}
+    assert {r["prevalence"] for r in res.cost_regimes} == {"native", "2%"}
+
+
+def test_cost_regimes_crop_wins_when_it_catches_defects():
+    # ARM-A escapes a defective (PASS on label=1); ARM-B catches it (FAIL). The crop must
+    # lower cost/item in every regime where escapes are the dominant cost. The DECISIONs are
+    # re-derived from p_vlm, so give A a low p_vlm (escape) and B a high one (catch).
+    from aiqs.eval.decision import Decision
+
+    def _s(label, p, dec):
+        s = VLMState(image_path="x", detector_score=0.5, detector_p=0.5, label=label)
+        s.p_vlm, s.final_decision = p, dec
+        s.vlm_verdict, s.vlm_conf, s.abstained = "clean", 0.9, False
+        return s
+
+    a = [[_s(1, 0.05, Decision.PASS), _s(0, 0.05, Decision.PASS)]]   # escape + good-pass
+    b = [[_s(1, 0.95, Decision.FAIL), _s(0, 0.05, Decision.PASS)]]   # crop catches the defect
+    rows = ce.cost_regimes(a, b)
+    native = next(r for r in rows if r["matrix"] == "10/3/1" and r["prevalence"] == "native")
+    assert native["arm_b"] < native["arm_a"]        # crop lowers cost by catching the escape
+    assert native["crop_vs_full"] == "crop-wins"
 
 
 # --------------------------------------------------------------------------- #

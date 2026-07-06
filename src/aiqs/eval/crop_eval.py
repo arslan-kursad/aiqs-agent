@@ -27,9 +27,24 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from aiqs.eval.decision import Decision
+from aiqs.eval.decision import (
+    CostMatrix,
+    Decision,
+    cost_optimal_threshold,
+    decide_one,
+    decision_metrics,
+    naive_decide,
+    prevalence_weights,
+)
 from aiqs.eval import vlm_eval as ve
 from aiqs.vlm import reasoning_rules as rr
+
+# The COST VERDICT matrices (the project's north star: optimise a business cost function,
+# not a detection metric). LOCKED = the benchmark's illustrative 10/3/1; REALISTIC = the
+# escape-dominant 100/3/1 (shipping a defect >> a re-inspection). See CLAUDE.md.
+_LOCKED = CostMatrix(false_accept=10.0, false_reject=3.0, escalation=1.0)
+_REALISTIC = CostMatrix(false_accept=100.0, false_reject=3.0, escalation=1.0)
+_TARGET_PREVALENCE = 0.02
 
 
 def _is_escape(state) -> bool:
@@ -110,6 +125,58 @@ def replication_2a(states_per_run: list[list]) -> dict:
             "confidence_separation_auc": auc}
 
 
+def _arm_cost_per_item(states_per_run, matrix: CostMatrix, target) -> float:
+    """Mean (over K runs) realized cost/item of ONE arm's bucket decisions, re-decided
+    from the stored provisional p_vlm under ``matrix`` and importance-weighted to ``target``
+    prevalence (None => the bucket's native prevalence). Reuses eval.decision entirely —
+    the SAME machinery that scores the Phase-1 policy, now inherited by the VLM layer."""
+    costs = []
+    for states in states_per_run:
+        labels = np.array([s.label for s in states], dtype=int)
+        decisions = [decide_one(s.p_vlm, matrix) for s in states]     # plain list: keep enums
+        w = None if target is None else prevalence_weights(labels, target, labels.mean())
+        m = decision_metrics(labels, decisions, matrix, weights=w, target_prevalence=target)
+        costs.append(m.cost_per_item)
+    return float(np.mean(costs))
+
+
+def _naive_cost_per_item(states_run0, matrix: CostMatrix, target) -> float:
+    """The 'no VLM layer' comparator: the detector's cost-optimal fixed-threshold call on
+    the SAME bucket, under ``matrix`` at ``target`` prevalence."""
+    labels = np.array([s.label for s in states_run0], dtype=int)
+    scores = np.array([s.detector_score for s in states_run0], dtype=float)
+    w = None if target is None else prevalence_weights(labels, target, labels.mean())
+    thr = cost_optimal_threshold(scores, labels, matrix, weights=w)
+    dec = naive_decide(scores, thr, 0.0)
+    return decision_metrics(labels, dec, matrix, weights=w,
+                            target_prevalence=target).cost_per_item
+
+
+def cost_regimes(states_a_per_run, states_b_per_run) -> list[dict]:
+    """THE COST VERDICT — the closing move, zero API. Per (matrix x prevalence) cell, the
+    realized cost/item of NAIVE (no VLM) / ARM-A (full VLM) / ARM-B (full+crop) plus the
+    human-review floor (escalation cost = review everything). Answers the north-star
+    question the escape-rate headline cannot: in WHICH cost regime is the crop worth it?
+
+    The crop is a recall lever bought with overkill, so its verdict is prevalence-conditional
+    — the VLM layer inherits Phase-1's operating-envelope logic (no universal win; it says
+    which regime you are in)."""
+    rows = []
+    for mname, matrix in (("10/3/1", _LOCKED), ("100/3/1", _REALISTIC)):
+        for pname, target in (("native", None), ("2%", _TARGET_PREVALENCE)):
+            naive = _naive_cost_per_item(states_a_per_run[0], matrix, target)
+            a = _arm_cost_per_item(states_a_per_run, matrix, target)
+            b = _arm_cost_per_item(states_b_per_run, matrix, target)
+            floor = matrix.escalation
+            options = {"naive": naive, "ARM-A": a, "ARM-B": b, "human-review": floor}
+            best = min(options, key=options.get)
+            rows.append({"matrix": mname, "prevalence": pname, "naive": naive,
+                        "arm_a": a, "arm_b": b, "human_floor": floor, "best": best,
+                        "crop_vs_full": ("crop-wins" if b < a - 1e-9 else
+                                         "crop-loses" if b > a + 1e-9 else "tie")})
+    return rows
+
+
 def token_cost_line(states_per_run: list[list]) -> dict:
     """Mean input/output tokens per call for one arm (None-safe; nan when mock)."""
     ti = [s.tokens_in for states in states_per_run for s in states if s.tokens_in is not None]
@@ -130,6 +197,7 @@ class CropExperiment:
     tokens_a: dict                     # (5) per-arm token cost
     tokens_b: dict
     n_diffuse: int                     # items with no crop (ARM-B byte-identical to ARM-A)
+    cost_regimes: list[dict] = field(default_factory=list)  # (6) THE COST VERDICT
     warnings: list[str] = field(default_factory=list)
 
 
@@ -160,4 +228,5 @@ def evaluate_two_arm(states_a_per_run: list[list], states_b_per_run: list[list],
         tokens_a=token_cost_line(states_a_per_run),
         tokens_b=token_cost_line(states_b_per_run),
         n_diffuse=int(sum(diffuse_by_item)),
+        cost_regimes=cost_regimes(states_a_per_run, states_b_per_run),
         warnings=warnings or [])
