@@ -206,10 +206,12 @@ export + crop** → `make decide` to verify ESCALATE∩good AND `n_dw` ≥ ~30 �
 full-vs-crop VLM experiment (Stage 3). capsule/screw = wiring/substrate probes only, NOT
 the headline.
 
-**Phase 2B — hard-substrate hunt + the two-arm full-vs-crop experiment. 🟡 ENGINEERING
-COMPLETE; HEADLINE EVIDENCE PENDING (needs a paid Kaggle-GPU session).** MVTec AD 2's
-download is form-gated (not scriptable) — see decision log — so substrate hunting moved to
-**VisA** (auto-downloads, no form).
+**Phase 2B — hard-substrate hunt + the two-arm full-vs-crop experiment. ✅ HEADLINE
+EVIDENCE OBTAINED (sonnet-4-6, capsules, $6.60, commit `05618e7`).** Crop cuts Sonnet's
+escape 0.500→0.115 with powered non-degenerate independence — a real, tier-sensitive
+second-look win (Haiku Δ0.038 vs Sonnet Δ0.385), with two honest caveats (overkill trade,
+45%-unclassified labeling). MVTec AD 2's download is form-gated (not scriptable) — see
+decision log — so substrate hunting moved to **VisA** (auto-downloads, no form).
 
 - [x] **Stage 0** — pre-AD2/AD-migration hygiene: canonical-run provenance cleanup, live
       model-ID check (no silent downgrade), token-budget measured (<$0.50 single-pass).
@@ -242,12 +244,25 @@ download is form-gated (not scriptable) — see decision log — so substrate hu
       lever), reusing the same crop instrument/checkpoint/served-model-guard machinery;
       `aiqs-model-tier-report` for the cross-tier comparison table. Config-only roster swap
       (`configs/free_vlm_roster.example.yaml`, documentation-only).
-- [ ] **PENDING — cannot be executed from this host:** the real claude-sonnet-4-6 headline
-      run and any real ARM-C free-tier run. Both need the VisA images + anomaly maps, which
-      exist only on the Kaggle GPU session that produced them (gitignored, not locally
-      present) — the detector/value file-interface split that enables local development also
-      means the real VLM call runs where the data lives. Ready-to-paste Kaggle cells handed
-      to the user; **115/115 tests green**, every identified engineering risk closed.
+- [x] **HEADLINE RUN COMPLETE — claude-sonnet-4-6, capsules, K=5, $6.60 (Kaggle, commit
+      `05618e7`).** Result is **Frame A on the primary hypothesis + a Frame-C caveat**
+      (see docs/EXPERIMENTS.md §9). Escape **0.500→0.115 (Δ+0.385, 77% cut)**; independence
+      **powered (n_dw=54) + non-degenerate + YES both arms** (NOT the Haiku rubber-stamp
+      artifact — verdict dist 77/12/11, degeneracy guard correctly did NOT fire). Model-tier
+      contrast is the finding: identical bucket/crop/rules, escape Δ 0.038 (Haiku) → 0.385
+      (Sonnet) — the second-look is tier-sensitive. TWO honest caveats from pre-registered
+      criteria: (1) the crop TRADES overkill-reduction for escape-reduction (good-rescue
+      54→30, good-escalate 2→20 while defect-escape 26→6, correct-fail 11→29 — a recall lever
+      bought with overkill, a cost-matrix question); (2) classification is PERCEPTION-leaning
+      (48 vs 24 semantic, reverse of Haiku) BUT unclassified 45% > the frozen 0.30 ceiling →
+      labeling INADEQUATE, human read required, rules NOT widened. Confidence AUC 0.49 +
+      escapes 100% stable-wrong replicate across tiers. 0 parse failures, 1090/1090
+      checkpointed, wall-clock 111 min. This is Phase-2B's HEADLINE EVIDENCE.
+- [ ] **PENDING (optional, not blockers):** a real ARM-C free-tier point (fills the
+      cost-scaling curve between the Haiku and Sonnet anchors); a human read of the 45%
+      unclassified escapes; a cost-matrix sweep locating where the crop's recall-gain beats
+      its overkill-cost. `macaroni1` second-ground TRIGGER is now armed (capsules gave a
+      positive → macaroni1 would be a second envelope point / validation).
 
 ## Decision log
 

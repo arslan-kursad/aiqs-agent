@@ -46,7 +46,7 @@ keeps one codebase working against both stacks.
 | 0 | Detection baseline + eval backbone (PatchCore, image/pixel metrics) | ✅ complete |
 | 1 | Calibrated, cost-aware, abstaining decision layer + operating envelope | ✅ complete — **first real win on VisA candle: 11–13% cheaper than a tuned threshold** |
 | 2A | VLM second-look backbone (ESCALATE-only, pre-registered independence test) | ✅ complete (mock-tested, live model-ID verified) |
-| 2B | Hard-substrate hunt + **two-arm full-vs-crop experiment** | 🟡 engineering complete — substrate found (VisA), instrument validated, **haiku rehearsal done**, degeneracy guard + ARM-C (model-tier lever) built; **sonnet-4-6 headline run pending** (needs a GPU/data-bearing host — see below) |
+| 2B | Hard-substrate hunt + **two-arm full-vs-crop experiment** | ✅ **headline obtained** (sonnet-4-6, capsules, $6.60): crop cuts escape **0.500→0.115** with powered, non-degenerate independence — a real, tier-sensitive win (Haiku Δ0.038 vs Sonnet Δ0.385), with two honest caveats (overkill trade + 45%-unclassified labeling) |
 
 ## Key findings so far
 
@@ -70,12 +70,15 @@ keeps one codebase working against both stacks.
   machinery to sweep cost from $0 to frontier; swapping a free-tier roster entry is a
   config change, never a code change (`aiqs-model-tier-report` for the cross-tier table).
   Engineering complete; no real run executed yet.
-- **What's pending, honestly:** the real claude-sonnet-4-6 headline run (and any real
-  ARM-C run) need the VisA images + anomaly maps, which live only on the GPU host that
-  produced them — this local stack is intentionally detector-free (see §1). Every
-  identified engineering risk (crop not engaging, API overload storms, mid-run data loss,
-  parse-failure lockup, silent model downgrade, spurious independence) is closed in code
-  and tested; the run itself is one command away on a GPU/data-bearing session.
+- **Headline (claude-sonnet-4-6, capsules, $6.60).** The crop cuts Sonnet's escape rate
+  **0.500 → 0.115** (77%), with **powered, non-degenerate** independence (n_dw=54, both
+  arms) — real signal, not the cheap-tier artifact. The second-look is **tier-sensitive**:
+  identical bucket/crop/rules, escape Δ goes 0.038 (Haiku) → 0.385 (Sonnet). Two honest
+  caveats, both from pre-registered criteria: the crop **trades overkill-reduction for
+  escape-reduction** (good-rescue 54→30 as it catches more defects), and the
+  perception-vs-semantic split is **PERCEPTION-leaning (48 vs 24) but 45% unclassified >
+  the 0.30 ceiling → human read required**. Full write-up:
+  [docs/EXPERIMENTS.md §9](docs/EXPERIMENTS.md).
 
 ## Quickstart
 

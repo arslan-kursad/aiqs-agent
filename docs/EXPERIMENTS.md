@@ -109,11 +109,18 @@ degeneracy-guarded independence rule, tokens/call, and wall-clock. Table below i
 **template** — fill with real numbers as tiers complete, never with placeholders passed
 off as data:
 
-| model | provider | escape A→B Δ | P/S/U | independence A / B | tokens/call A / B | wall-clock |
+| model | provider | escape A→B Δ | P/S/U (unclassified) | independence A / B | tokens/call A / B | wall-clock / cost |
 |---|---|---|---|---|---|---|
-| claude-haiku-4-5 | anthropic | 1.000→0.962 (Δ+0.038) | 5/235/10 | invalid-degenerate (rubber stamp) both arms | 809/107 → 1353/110 | ~minutes (single Kaggle session) |
-| claude-sonnet-4-6 | anthropic | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| claude-haiku-4-5 | anthropic | 1.000→0.962 (Δ+0.038) | 5/235/10 (4%) | **invalid-degenerate** — rubber stamp, both arms | 809/107 → 1353/110 | ~min / $1.77 |
+| **claude-sonnet-4-6** | anthropic | **0.500→0.115 (Δ+0.385)** | 48/24/58 (**45% — labeling inadequate**) | **YES / YES** — powered (n_dw=54), non-degenerate | 810/101 → 1354/273 | 111 min / $6.60 |
 | (ARM-C free-tier) | openai_compatible | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+
+**The model-tier contrast is the story.** A cheap-tier VLM (Haiku) is a rubber stamp whose
+"independence" is a degeneracy artifact; the frontier tier (Sonnet) brings *real,
+powered, non-degenerate* independent signal and the crop cuts its escape rate by 77%
+(0.500→0.115). The second-look mechanism is **tier-sensitive** — it is inert at $0-tier
+and load-bearing at the frontier. Same bucket, same crop instrument, same frozen rules;
+only the model changed.
 
 ## 8. Next — the locked headline run
 
@@ -123,29 +130,56 @@ without re-billing a completed call). The rehearsal sharpens the question it mus
 **are sonnet's escapes also semantic-dominated?** If yes, the Phase-2B lever is
 prompt/anchor design, not image fidelity — and that redirects the roadmap.
 
-## 9. Stage-4 verdict — template (fill with numbers, do not re-narrate after seeing them)
+## 9. Stage-4 verdict — sonnet-4-6 headline (capsules, 109-item bucket, K=5, $6.60)
 
-Exactly one of the three frames below gets filled in once the sonnet-4-6 headline (and,
-if triggered, the macaroni1 second ground) completes. The frame is chosen by the data, not
-the other way around — this section exists precisely so the verdict isn't re-litigated
-after the numbers are known.
+The data landed as **Frame A on the primary hypothesis, with a material Frame-C caveat** —
+recorded exactly as measured, not re-narrated to fit one frame.
 
-**Frame A — Positive.** *"Sonnet's escapes are NOT rubber-stamp/semantic-dominated: escape
-rate moved [X]→[Y] (Δ=[D]) with the crop, PERCEPTION classified at [P]% (vs Haiku's 2%),
-Wilson-lo=[W] (powered, n_dw=54) exceeds 0.50 non-degenerate. The full-vs-crop hypothesis
-is CONFIRMED at the headline tier: a second look with the right image adds independent
-signal beyond the detector."* → writeup + final commit + merge.
+**CONFIRMED (Frame A) — the crop mechanism works at the frontier tier, and it is real
+signal, not an artifact:**
+- **Escape rate 0.500 → 0.115 (Δ +0.385, a 77% relative cut)**; fixed-by-crop 102 vs
+  broken-by-crop 2 (run-item pairs). The high-res crop makes Sonnet catch defects the
+  full image missed.
+- **Independence is powered and non-degenerate**: n_dw = 54, both arms "independent 5/5",
+  and the verdict distribution is genuinely spread (ARM-A 77% clean / 12% unsure / 11%
+  defect — well below the 95% degeneracy line). Unlike the Haiku rehearsal, whose
+  "independent" was a rubber-stamp artifact the degeneracy guard flags, Sonnet's is a real
+  independent-signal result.
+- **The model-tier contrast is itself a finding**: identical bucket/crop/rules, escape Δ
+  goes 0.038 (Haiku) → 0.385 (Sonnet). The second-look lever is tier-sensitive — inert at
+  $0, load-bearing at the frontier.
 
-**Frame B — Null / semantic-dominant (the Haiku pattern replicates).** *"Sonnet's escapes
-are ALSO semantic-dominated: [S]% classify SEMANTIC (vs Haiku's 94%), crop moves escape by
-only [D] (vs Haiku's 0.038), independence is [invalid-degenerate / theatre] at the
-headline tier too. The Phase-2B lever is NOT image fidelity — better pixels do not fix a
-model that sees the flagged region and calls it normal. The lever is prompt/anchor design
-or a fundamentally different verification strategy."* → informative negative result,
-writeup + merge (pre-registered criteria make this a real finding, not a failure).
+**CAVEAT (Frame C) — two honest qualifications, both from pre-registered criteria:**
+1. **The crop is not a free win — it trades overkill-reduction for escape-reduction.** The
+   Phase-1 layer's *core value* is rescuing goods (cutting false rejects). Full-image
+   Sonnet already rescued 54/57 goods (overkill 1, escalate 2). Adding the crop makes it
+   more suspicious *everywhere*: good-rescue drops **54 → 30**, good-overkill rises
+   **1 → 7**, good-escalation rises **2 → 20** — while defect-escapes fall 26 → 6 and
+   correct-fails rise 11 → 29. So the crop is a **defect-recall lever bought with
+   overkill**: it catches more defects AND flags more good parts. Whether that trade is
+   worth it is a cost-matrix question (escape-dominant regimes: yes; overkill-dominant: no)
+   — exactly the operating-envelope framing Phase 1 established.
+2. **The perception-vs-semantic question cannot be cleanly resolved by rule.** Where
+   classifiable, PERCEPTION leads SEMANTIC **48 vs 24** — the *reverse* of Haiku's 5/235,
+   suggesting Sonnet's failures are more perceptual (fixed by better pixels) than semantic.
+   BUT unclassified = 58/130 = **45% > the pre-registered 0.30 ceiling → labeling declared
+   INADEQUATE (human read required)**; the rules are NOT widened post hoc. The unclassified
+   mass is mostly crop-induced *uncertainty* (clean → unsure rather than clean → defect):
+   the crop often makes Sonnet abstain, not flip to defect, which reduces escapes (unsure
+   routes to a human) without a clean perceptual "aha". So: perception-leaning, but the
+   honest verdict on mechanism is "human adjudication of the 45% is required before
+   claiming perception-dominance."
 
-**Frame C — Partial.** *"Crop reduced escape by [D], below the pre-registered
-[threshold]; independence is [redundant/independent] but [caveat]. Cost-aware abstention
-gains a bounded, non-zero lever — a new operating-envelope boundary point, not a clean
-win."* → envelope update + next-step proposal (prompt/few-shot iteration), not a final
-verdict either way.
+**Replicated across tiers (robustness):** self-reported confidence does not separate
+correct from wrong (AUC 0.49, matching Haiku 0.50 and the 2A observation), and full-image
+escapes are 100% stable-wrong (26/26) — K-run agreement is not an abstain signal at any
+tier. Only the *crop* moves them.
+
+**Bottom line.** The thesis — *a cost-aware, abstaining decision layer plus a targeted VLM
+second-look adds production value* — holds at the frontier tier: the crop delivers a real,
+powered, independent escape-reduction. But the headline sharpens rather than simplifies the
+picture: the second-look is a **recall lever with an overkill cost**, and its dominant
+failure mode needs human labeling to call perception-vs-semantic. Next steps (not blockers
+for the finding): (a) an ARM-C free-tier point to fill the cost-scaling curve between the
+two anchors; (b) a human read of the 45% unclassified; (c) a cost-matrix sweep to locate
+where the crop's recall-gain beats its overkill-cost.
