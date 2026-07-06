@@ -15,3 +15,4 @@ timestamp,run_id,seed,category,dataset,model,model_size,image_size,max_steps,acc
 20260705T175134Z,patchcore-wide_resnet50_2_visa-capsules,42,capsules,visa,patchcore,wide_resnet50_2,256x256,70000,auto,,,,0.7386666666666667,0.7222222222222222
 20260705T180205Z,patchcore-wide_resnet50_2_visa-capsules,42,capsules,visa,patchcore,wide_resnet50_2,256x256,70000,auto,,,,0.7386666666666667,0.7222222222222222
 20260705T181237Z,patchcore-wide_resnet50_2_visa-capsules,42,capsules,visa,patchcore,wide_resnet50_2,256x256,70000,auto,,,,0.7386666666666667,0.7222222222222222
+20260706T051813Z,patchcore-wide_resnet50_2_visa-capsules,42,capsules,visa,patchcore,wide_resnet50_2,256x256,70000,auto,,,,0.7386666666666667,0.7222222222222222
