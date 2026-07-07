@@ -1,4 +1,4 @@
-# Anomaly Adjudicator
+# AIQS-Agent
 
 [![Python 3.11](https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PyTorch 2.2](https://img.shields.io/badge/PyTorch-2.2-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
@@ -9,9 +9,9 @@
 [![Claude](https://img.shields.io/badge/Claude-sonnet--4--6-D97757?logo=anthropic&logoColor=white)](https://www.anthropic.com/)
 [![uv](https://img.shields.io/badge/uv-package%20manager-DE5FE9)](https://github.com/astral-sh/uv)
 
-**Cost-aware, abstaining decision layer for industrial visual inspection** — calibrated
-PASS/FAIL/ESCALATE with a VLM second-look. Venn-Abers conformal calibration, cost-matrix
-policy, LangGraph orchestration, FastAPI serving.
+**An agentic adjudication layer for industrial visual quality inspection** — cost-aware,
+calibrated, *abstaining* decisions layered on top of an off-the-shelf anomaly detector,
+with a VLM second-look on exactly the items the policy cannot decide.
 
 > **Thesis.** In industrial visual inspection the detector is a commodity; the value is in
 > the **decision layer**. We optimize a business cost function and the false-reject
@@ -119,14 +119,6 @@ loads (see [Serving](#serving-phase-3) below) — no separate model-export step.
   [docs/EXPERIMENTS.md §9](docs/EXPERIMENTS.md).
 
 ## Quickstart
-
-> **Renamed 2026-07-07:** this repo moved from `aiqs-agent` to `anomaly-adjudicator`
-> (GitHub redirects old URLs automatically, but redirects don't follow through `git`
-> remotes forever). Cloned before the rename? Update your remote:
-> `git remote set-url origin git@github.com:arslan-kursad/anomaly-adjudicator.git`
-> (or the `https://github.com/arslan-kursad/anomaly-adjudicator.git` form). The Python
-> package and CLI names are unchanged — `import aiqs`, `aiqs-serve`, `aiqs-decide`, ...
-> stay exactly as they are (see CLAUDE.md for why).
 
 ```bash
 make install                 # uv sync (pinned local stack)

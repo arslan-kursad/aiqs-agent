@@ -16,7 +16,7 @@
 # batch 8 (lower RAM peak). This trains in minutes and keeps image-level separation.
 
 seed: 42
-category: capsule  # manually corrected 2026-07-07 -- config.yaml originally persisted the un-overridden --config default (root cause: https://github.com/arslan-kursad/anomaly-adjudicator/issues/3)
+category: capsule  # manually corrected 2026-07-07 -- config.yaml originally persisted the un-overridden --config default (root cause: https://github.com/arslan-kursad/aiqs-agent/issues/3)
 
 dataset:
   name: mvtec

@@ -1,7 +1,7 @@
 [project]
 name = "aiqs"
 version = "0.1.0"
-description = "Anomaly Adjudicator — cost-aware, calibrated, abstaining decision layer for industrial visual quality inspection, with a VLM second-look and LangGraph/FastAPI serving"
+description = "AIQS-Agent — agentic adjudication layer for industrial visual quality inspection (Phase 0: detection baseline)"
 requires-python = ">=3.11,<3.12"
 dependencies = [
     # Detector stack. Pinned to the anomalib 1.2 line because this is an Intel

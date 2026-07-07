@@ -1,4 +1,4 @@
-# Anomaly Adjudicator — Phase 0 detection baseline config.
+# AIQS-Agent — Phase 0 detection baseline config.
 # Every field is overridable from the CLI (see src/aiqs/config.py), e.g.
 #   uv run aiqs-train --category transistor --max-steps 10
 

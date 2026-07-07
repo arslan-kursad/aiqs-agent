@@ -1,4 +1,4 @@
-# Anomaly Adjudicator — Phase 0 Report
+# AIQS-Agent — Phase 0 Report
 
 **Agentic Adjudication Layer for Industrial Visual Quality Inspection**
 
@@ -6,7 +6,7 @@
 | --- | --- |
 | **Phase** | 0 — foundation + detection baseline + evaluation skeleton |
 | **Date** | 2026-06-22 |
-| **Repository** | https://github.com/arslan-kursad/anomaly-adjudicator (public) |
+| **Repository** | https://github.com/arslan-kursad/aiqs-agent (private) |
 | **Status** | ✅ Complete — reduced-budget CPU baseline established (full-budget run deferred to a GPU/arm64 host) |
 | **Host** | Intel Core i5-5350U (2c @ 1.8 GHz), macOS 12.7.6, x86_64 — **CPU-only** |
 
@@ -74,7 +74,7 @@ judged against.
 ## 4. What was built
 
 ```
-anomaly-adjudicator/
+aiqs-agent/
 ├── pyproject.toml            # pinned stack, console scripts
 ├── uv.lock                   # committed for reproducibility
 ├── Makefile                  # install · data · train · eval · baseline · smoke

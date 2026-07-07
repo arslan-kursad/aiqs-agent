@@ -1,4 +1,4 @@
-# CLAUDE.md — Anomaly Adjudicator project memory
+# CLAUDE.md — AIQS-Agent project memory
 
 > Read this first every session. It is the durable memory for this project: the
 > north star, the hard constraints, the target architecture, the pinned stack,
@@ -936,7 +936,7 @@ guards) is IMPORTED, never forked — this phase orchestrates and serves it.
     (→macaroni1); `visa-macaroni2_20260702T020900Z` (→macaroni2);
     `visa-pcb1_20260702T024050Z` (→pcb1); `visa-pcb2_20260702T031400Z` (→pcb2).
   - **Root cause tracked as a public GitHub issue**
-    ([#3](https://github.com/arslan-kursad/anomaly-adjudicator/issues/3)), not just a private
+    ([#3](https://github.com/arslan-kursad/aiqs-agent/issues/3)), not just a private
     note — "known and being watched" should be externally visible, the same honesty
     standard the guards in this project already apply to results (a documented known
     issue is the code-review equivalent of a pre-registered caveat).
@@ -945,30 +945,6 @@ guards) is IMPORTED, never forked — this phase orchestrates and serves it.
   - **Sequencing (user's explicit call): this lands BEFORE merging Phase 3 to `main`,**
     same day but in order — the integrity claim only fully holds if `main` is clean at
     the moment it becomes "official."
-- **2026-07-07** — **Repo renamed `aiqs-agent` → `anomaly-adjudicator`** (GitHub
-  Settings, manual; old URLs auto-redirect). **Zero-churn decision: the Python package
-  (`aiqs`), every CLI entry point (`aiqs-serve`, `aiqs-decide`, `aiqs-vlm`, ...), and
-  `import aiqs` all stay exactly as they are.** Renaming the repo is a branding/SEO
-  move (clearer project name, better search/topic alignment); renaming the installed
-  package would be pure churn — every import, entry-point registration, test, and this
-  entire CLAUDE.md would need touching for zero functional gain, and "aiqs" is already
-  what every command a user actually types looks like. Docs swept for the OLD name as a
-  *project title* (README H1/tagline, ARCHITECTURE.md, PHASE0_REPORT.md, this file,
-  `pyproject.toml`'s `description`, `Makefile`/`configs/default.yaml` header comments,
-  the Colab/Kaggle clone-path comments in `requirements-ad2.txt`, and the inline
-  provenance-fix comments already committed into 12 runs' `config.yaml`) — all updated
-  to `Anomaly Adjudicator` / `anomaly-adjudicator`. Deliberately NOT touched: the `aiqs`
-  package/CLI names anywhere (source code, entry points); the console banner strings
-  inside `src/aiqs/*.py` (`print("... AIQS-Agent ...")`) and the FastAPI `title=` in
-  `api/main.py` — those are source, out of scope for a docs/branding pass, and can be
-  revisited separately if ever desired; and the literal `/content/aiqs-agent/...`
-  filesystem paths recorded in committed `image_scores.csv`/`decision_scores.csv`/
-  `vlm_crop_*` evidence files from past Colab/Kaggle sessions — those are DATA (the
-  actual working-directory path the run used), not branding, and rewriting them would
-  be altering evidence, not fixing a name. GitHub topics + About description also
-  refreshed for the new name (see README badges + repo Settings). Also added: a
-  "renamed" callout in README with the `git remote set-url` command for anyone who
-  cloned before the rename.
 
 ## How Phase 1 extends the eval contract
 
