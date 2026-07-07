@@ -55,3 +55,10 @@ results/runs/*/mock_*
 # Phase-2B anomaly-map export — heavy per-pixel dumps (the crop instrument's input).
 # Only the small manifest + the committed image_scores.csv reference these.
 results/runs/*/anomaly_maps/
+
+# --- Phase 3: LangGraph checkpoints (per-run sqlite state, not evidence/config) ---
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+results/runs/*/serve_uploads/
