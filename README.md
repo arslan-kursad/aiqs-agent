@@ -1,4 +1,8 @@
-# AIQS-Agent
+# Anomaly Adjudicator
+
+_(GitHub repo: [`aiqs-agent`](https://github.com/arslan-kursad/aiqs-agent) — the repo
+slug and the `aiqs` Python package/CLI names are unchanged; this is a display-name-only
+rebrand for search clarity, not a repo rename.)_
 
 [![Python 3.11](https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PyTorch 2.2](https://img.shields.io/badge/PyTorch-2.2-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
@@ -9,9 +13,9 @@
 [![Claude](https://img.shields.io/badge/Claude-sonnet--4--6-D97757?logo=anthropic&logoColor=white)](https://www.anthropic.com/)
 [![uv](https://img.shields.io/badge/uv-package%20manager-DE5FE9)](https://github.com/astral-sh/uv)
 
-**An agentic adjudication layer for industrial visual quality inspection** — cost-aware,
-calibrated, *abstaining* decisions layered on top of an off-the-shelf anomaly detector,
-with a VLM second-look on exactly the items the policy cannot decide.
+**Cost-aware, abstaining decision layer for industrial visual inspection** — calibrated
+PASS/FAIL/ESCALATE with a VLM second-look. Venn-Abers conformal calibration, cost-matrix
+policy, LangGraph orchestration, FastAPI serving.
 
 > **Thesis.** In industrial visual inspection the detector is a commodity; the value is in
 > the **decision layer**. We optimize a business cost function and the false-reject

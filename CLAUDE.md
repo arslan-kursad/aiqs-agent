@@ -945,6 +945,29 @@ guards) is IMPORTED, never forked — this phase orchestrates and serves it.
   - **Sequencing (user's explicit call): this lands BEFORE merging Phase 3 to `main`,**
     same day but in order — the integrity claim only fully holds if `main` is clean at
     the moment it becomes "official."
+- **2026-07-07** — **README display name = "Anomaly Adjudicator"; the GitHub repo slug
+  stays `aiqs-agent` — a deliberate split, not an oversight.** The user asked for a repo
+  rename (`aiqs-agent` → `anomaly-adjudicator`) for SEO/clarity; a full docs sweep was
+  built and pushed to `main` under that assumption. `gh repo view` then showed the
+  GitHub Settings rename had NOT actually taken effect (`anomaly-adjudicator` doesn't
+  resolve; `aiqs-agent` still does) — surfaced immediately rather than silently
+  patched, and the whole sweep was `git revert`'d clean (verified zero diff against the
+  last known-good commit) once the user confirmed they were abandoning the actual
+  GitHub rename. The user's follow-up: even so, the README's DISPLAYED title/tagline
+  should say "Anomaly Adjudicator" — Google/GitHub search snippets are built from
+  README content (the H1 + opening paragraph), not the URL slug, so this is a real,
+  independent SEO lever even with the repo staying `aiqs-agent`. Re-applied ONLY that
+  (H1 + tagline, plus one clarifying line under the H1 stating the repo slug and
+  `aiqs` package/CLI are unchanged, so a reader isn't confused by the name/URL
+  mismatch) — none of the broken-link surface from the aborted full rename (the
+  GitHub issue #3 URL, `docs/PHASE0_REPORT.md`'s repository field, the
+  `git remote set-url` callout, `pyproject.toml`/`Makefile`/config header comments)
+  was reintroduced, since all of those reference the ACTUAL repo, which did not move.
+  **Lesson for next time:** a "rename for SEO" request has two independent parts —
+  the URL/slug (needs the actual GitHub action to exist first) and the display
+  copy (README text, safe to change unconditionally) — verify the former before
+  building a sweep that assumes it, but don't let a failed slug-rename block the
+  display-copy win, which is unconditionally available.
 
 ## How Phase 1 extends the eval contract
 
