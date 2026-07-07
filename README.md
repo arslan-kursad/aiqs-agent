@@ -37,7 +37,9 @@ flowchart LR
 
 The two worlds talk **by file, not by import**: the detector runs on a GPU host
 (anomalib 2.x), the decision layer runs anywhere (no torch). A version-dispatched seam
-keeps one codebase working against both stacks.
+keeps one codebase working against both stacks. Phase 3 extends the file interface to
+**serve time**: a completed run directory *is* the "decision artifact" a FastAPI server
+loads (see [Serving](#serving-phase-3) below) — no separate model-export step.
 
 ## Status at a glance
 
@@ -47,6 +49,7 @@ keeps one codebase working against both stacks.
 | 1 | Calibrated, cost-aware, abstaining decision layer + operating envelope | ✅ complete — **first real win on VisA candle: 11–13% cheaper than a tuned threshold** |
 | 2A | VLM second-look backbone (ESCALATE-only, pre-registered independence test) | ✅ complete (mock-tested, live model-ID verified) |
 | 2B | Hard-substrate hunt + **two-arm full-vs-crop experiment** | ✅ **headline obtained** (sonnet-4-6, capsules, $6.60): crop cuts escape **0.500→0.115** with powered, non-degenerate independence — a real, tier-sensitive win (Haiku Δ0.038 vs Sonnet Δ0.385), with two honest caveats (overkill trade + 45%-unclassified labeling) |
+| 3 | Productization: **LangGraph orchestration + FastAPI Intelligent API** | ✅ complete — auditable, regime-conditional, torch-free serving over the proven pipeline |
 
 ## Key findings so far
 
@@ -91,7 +94,8 @@ make vlm RUN=<id> MOCK=1     # Phase-2A VLM second-look (mock = no API)
 make vlm-crop RUN=<id>       # Phase-2B two-arm full-vs-crop experiment (Anthropic, locked)
 make model-tier-report RUN=<id>  # cross-tier comparison table (Haiku/Sonnet/ARM-C)
 make sim                     # SYNTHETIC machinery validation (walled off)
-make test                    # 115 unit tests (all API calls mocked)
+make serve RUN=<id>          # Phase-3 FastAPI Intelligent API (mock VLM, no key needed)
+make test                    # unit tests (all API calls mocked)
 ```
 
 ARM-C (a free-tier model-tier run) is `aiqs-vlm-crop` with `--provider openai_compatible
@@ -101,6 +105,48 @@ ARM-C (a free-tier model-tier run) is `aiqs-vlm-crop` with `--provider openai_co
 GPU detector rounds (anomalib 2.x, VisA/MVTec-AD2) run on a CUDA host:
 see [`requirements-ad2.txt`](requirements-ad2.txt) and
 [`scripts/run_ad2_gpu.py`](scripts/run_ad2_gpu.py) (`--smoke`, `--sweep`, single-round).
+
+## Serving (Phase 3)
+
+The proven pipeline (calibration → cost policy → VLM second-look → human review) is
+productized as a **LangGraph orchestration** behind a **FastAPI Intelligent API** — both
+consuming the SAME completed `results/runs/<id>/` directory as a "decision artifact",
+no separate export step, no torch/anomalib in the serving path.
+
+```mermaid
+flowchart LR
+    IN["POST /adjudicate<br/>anomaly_score + image?"] --> ING[ingest] --> CAL[calibrate<br/>live inductive Venn-Abers]
+    CAL --> POL{cost_policy}
+    POL -->|pass/fail| FIN[finalize]
+    POL -->|escalate, no image| HUM
+    POL -->|escalate + image| VLM[vlm_second_look] --> ABS[vlm_abstain_rule]
+    ABS -->|auto-decided| FIN
+    ABS -->|abstain| HUM["human_interrupt<br/>(graph PAUSES, sqlite-checkpointed)"]
+    HUM -->|"POST /human-verdict/{id}"| FIN
+    FIN --> OUT["PASS / FAIL + full audit trace"]
+```
+
+```bash
+uv run aiqs-serve --run <id>                       # mock VLM, no API key — try it now
+uv run aiqs-serve --run <id> --provider anthropic --image-root datasets/
+bash scripts/demo_requests.sh                       # clean PASS · escalation+VLM · human resume
+```
+
+- **Torch-free by construction.** `aiqs.api`/`aiqs.graph` never import anomalib/torch;
+  they read the run's `image_scores.csv` exactly like `aiqs-decide` does.
+- **Calibration is live, not cached.** A new score is scored by inductive Venn-Abers
+  against the run's own labelled set (`aiqs.eval.decision.ivap`) — this is what an
+  inference-time Venn-Abers prediction *is*, not an approximation of one. It will not
+  bit-match the run's committed cross/OOF `decision_scores.csv` (a different, also-valid
+  estimator) — see CLAUDE.md.
+- **Every decision is auditable by construction.** LangGraph's own checkpointed state
+  history (`get_state_history`) *is* the audit trace — nothing hand-rolled to drift.
+- **Regime-conditional, not one-size-fits-all.** Cost matrix and target prevalence are
+  per-request overridable; the response always states which regime produced the decision
+  (Phase 1's operating-envelope finding, exposed as an API feature).
+- **Auth** is a single env-var API key (`AIQS_API_KEY` by default); unset ⇒ disabled with
+  a loud startup warning (dev mode only — see the docs caveat before exposing this
+  beyond localhost).
 
 ## Integrity by construction
 
@@ -122,6 +168,14 @@ The credibility of a null result is this project's core asset. Enforced in code,
   to an explicit `invalid-degenerate` label, never counted as a spurious "independent".
 - **Honest nulls in the log** — the weak-detector null, the saturated-substrate finding,
   and the voided first dry-run are all committed, with root causes.
+- **item_id collision guard (Phase 3)** — re-posting an in-flight or finalized item_id to
+  `/adjudicate` returns `409`, never a silent overwrite or a stale-looking success.
+- **Path-traversal guard (Phase 3)** — `image_path` requests are confined to a configured
+  `--image-root` (rejected otherwise); `image_b64` is the safe default with no filesystem
+  exposure at all.
+- **Node-composition parity guard (Phase 3)** — the graph's `vlm_second_look`/
+  `vlm_abstain_rule` split is tested byte-for-byte against the single-pass
+  `aiqs.vlm.adjudicate.adjudicate()` it decomposes, so the two can never silently drift.
 
 ## Repository layout
 
@@ -140,10 +194,16 @@ src/aiqs/
   model_tier_report.py  cross-tier comparison (Haiku/Sonnet/ARM-C), walled off from summary.md
   eval/           metrics, persistence, decision + VLM (incl. the degeneracy guard) +
                   two-arm evaluation
-scripts/          GPU runner (run_ad2_gpu.py) · local diagnostics (verify_vlm_local.py)
+  api/            Phase-3 decision artifact (live inductive Venn-Abers) + FastAPI app
+                  (aiqs-serve)
+  graph/          Phase-3 LangGraph orchestration — state, nodes, build_graph(), the
+                  aiqs-graph demo/debug CLI (shared with aiqs-serve, one graph two front doors)
+scripts/          GPU runner (run_ad2_gpu.py) · local diagnostics (verify_vlm_local.py) ·
+                  demo_requests.sh (the Phase-3 clean-PASS / escalation / human-resume demo)
 results/          committed evidence: metrics.csv, decisions.csv, per-run summaries + plots
-tests/            115 tests — decision policy, calibration, crop, two-arm, guards, ARM-C
-                  backend, model-tier report (API mocked)
+tests/            decision policy, calibration, crop, two-arm, guards, ARM-C backend,
+                  model-tier report, graph paths, API contract, graph/API parity guards,
+                  a real-run serving integration test (API mocked throughout)
 docs/             architecture & experiment documentation
 ```
 
@@ -152,4 +212,6 @@ docs/             architecture & experiment documentation
 Local (pinned, Intel-mac CPU): `anomalib 1.2 · torch 2.2.2 · numpy<2` — the decision/VLM
 layer itself is pure numpy/sklearn + the Anthropic API. GPU host: `anomalib 2.x` via a
 separate requirements file (the two stacks are mutually exclusive by dependency —
-measured, documented in [CLAUDE.md](CLAUDE.md)).
+measured, documented in [CLAUDE.md](CLAUDE.md)). Serving (Phase 3) adds
+`langgraph · langgraph-checkpoint-sqlite · fastapi · uvicorn` — independent of the
+detector pin, torch-free, installs on the same local stack.

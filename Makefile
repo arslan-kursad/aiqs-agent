@@ -7,20 +7,22 @@
 #   make eval
 #   make decide                     # Phase-1 adjudication on the latest run
 #   make decide RUN=<run_id>        # ...on a specific results/runs/<run_id>
+#   make serve                      # Phase-3 FastAPI Intelligent API (mock VLM, latest run)
 #   make test                       # unit tests
 
 CONFIG   ?= configs/patchcore_cpu.yaml
 CATEGORY ?= screw
 RUN      ?=                 # Phase-1 run id (empty => latest run)
+PROVIDER ?= mock             # aiqs-serve VLM backend: mock | anthropic | openai_compatible
 UV       := uv run
 
 .PHONY: help install data train eval baseline smoke smoke-patchcore decide sim vlm \
-	vlm-crop model-tier-report test clean
+	vlm-crop model-tier-report serve test clean
 
 help:
 	@echo "Targets: install | data | train | eval | baseline | smoke | decide | vlm |"
-	@echo "         vlm-crop | model-tier-report | test | clean"
-	@echo "Vars:    CONFIG=$(CONFIG)  CATEGORY=$(CATEGORY)  RUN=$(RUN)"
+	@echo "         vlm-crop | model-tier-report | serve | test | clean"
+	@echo "Vars:    CONFIG=$(CONFIG)  CATEGORY=$(CATEGORY)  RUN=$(RUN)  PROVIDER=$(PROVIDER)"
 
 install:
 	uv sync
@@ -85,7 +87,12 @@ vlm-crop:
 model-tier-report:
 	$(UV) aiqs-model-tier-report $(if $(RUN),--run $(RUN),)
 
-# Unit tests for the decision policy / calibration / guard (dev group).
+# Phase-3 FastAPI Intelligent API. RUN defaults to the latest run. PROVIDER=mock (default)
+# needs no API key; PROVIDER=anthropic needs ANTHROPIC_API_KEY + --image-root for image_path.
+serve:
+	$(UV) aiqs-serve $(if $(RUN),--run $(RUN),) --provider $(PROVIDER)
+
+# Unit tests for the decision policy / calibration / guard / graph / API (dev group).
 test:
 	uv run --group dev pytest -q
 

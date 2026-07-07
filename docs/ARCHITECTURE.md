@@ -109,3 +109,54 @@ tier through the frontier headline model. `base_url` / `model` / `api_key_env` a
 caller-supplied — a roster swap is a config change, not a code change. Rate limiting is
 two independent mechanisms: a proactive `rpm_limit` pace (before hitting a free tier's
 ceiling) and the SDK's own retry/backoff (after a transient error) — see CLAUDE.md.
+
+## 6. Phase 3 — LangGraph orchestration + FastAPI serving
+
+The file-interface boundary (§1) extends to serve time: a completed `results/runs/<id>/`
+directory doubles as the "decision artifact" — no model-export step, no separate serving
+format. `aiqs.api.artifact.load_artifact` reads it exactly like `aiqs-decide` does
+(`_find_run_dir` / `_load_scores`, imported, not forked) and calibrates new scores with
+**live inductive Venn-Abers** against the run's own labelled set — the definitionally
+correct inference-time Venn-Abers computation, not a persisted "fitted calibrator"
+approximating one.
+
+```mermaid
+flowchart TB
+    subgraph SERVE["aiqs-serve (FastAPI) — one process per run directory"]
+        REQ["POST /adjudicate<br/>score + image? + overrides?"] --> ING[ingest]
+        ING --> CAL["calibrate<br/>live IVAP + prior_shift"]
+        CAL --> CP{cost_policy}
+        CP -->|pass / fail| FIN[finalize]
+        CP -->|"escalate, no image"| HI
+        CP -->|"escalate + image"| VSL[vlm_second_look] --> VAR[vlm_abstain_rule]
+        VAR -->|auto-decided| FIN
+        VAR -->|abstain| HI["human_interrupt<br/>graph.interrupt() — PAUSES,<br/>sqlite-checkpointed"]
+        HI -->|"POST /human-verdict/{item_id}<br/>Command(resume=...)"| FIN
+        FIN --> RESP["AdjudicateResponse<br/>decision · calibrated_p · expected_costs ·<br/>vlm info · resolved_by · guard warnings"]
+    end
+```
+
+Design points worth stating explicitly:
+
+- **`vlm_second_look` and `vlm_abstain_rule` are two separate, minimal nodes**, not one
+  call into the existing `aiqs.vlm.adjudicate.adjudicate()` (which composes the same two
+  pieces). This gives per-node audit granularity; `tests/test_graph_parity.py` asserts the
+  decomposition is byte-for-byte equivalent to `adjudicate()` on identical inputs, so the
+  split can never silently drift from the single-pass 2A/2B pipeline it wraps.
+- **`human_interrupt` does nothing before its `interrupt()` call.** Verified empirically
+  against the installed langgraph: a node re-executes everything before its `interrupt()`
+  line on resume, so any side effect there (e.g. a VLM call) would double-fire. The VLM
+  call already happened once, in the prior `vlm_second_look` node, which sits outside the
+  interrupt's replay range.
+- **The audit trace is LangGraph's own checkpointed state history**
+  (`graph.get_state_history`) — nothing hand-rolled to drift from what actually ran.
+- **`thread_id = item_id`.** Re-posting an in-flight or already-finalized `item_id` to
+  `/adjudicate` is a `409`, never a silent overwrite (checked via
+  `graph.get_state(config).values` — empty ⇒ genuinely new item).
+- **`image_path` is confined to a configured `--image-root`** (rejected otherwise);
+  `image_b64` is the safe default with no server-filesystem exposure.
+- **One graph, two front doors.** `aiqs-graph` (a thin CLI for one-item demo/debug) and
+  `aiqs-serve` (the FastAPI app) both call the same `aiqs.graph.build.build_graph()` — the
+  graph is not reimplemented per entry point.
+- **Serving is torch-free.** `aiqs.api` / `aiqs.graph` never import anomalib/torch; the
+  detector stays an offline producer, exactly as in §1.

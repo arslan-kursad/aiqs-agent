@@ -35,10 +35,15 @@ Detector (Anomalib)
        (rules + a VLM second-look via the Anthropic/Claude API
         + later similar-case retrieval)
   -> cost-matrix decision policy: PASS / FAIL / ESCALATE(->human)
-  -> later: root-cause agent, memory, conversational copilot, FastAPI
+  -> FastAPI Intelligent API (Phase 3, REALIZED — see below)
+  -> Phase-4 backlog (logged, not scoped): similar-case retrieval, memory,
+     root-cause agent, conversational copilot
 ```
 
-Observability via **Langfuse** once an LLM enters.
+Observability via **Langfuse** once an LLM enters (Phase 2). LangGraph itself arrived in
+**Phase 3**, not 2A/2B — those phases deliberately stayed plain-function/single-pass (see
+Phase-3 entry below, "E1 debt repaid"); the graph's interrupt/human-in-the-loop and
+audit-trace needs are what finally earn it.
 
 ## Stack (pinned) & host notes
 
@@ -67,6 +72,13 @@ Verified-installable, contemporaneous pin (Python **3.11.15**, via `uv`):
 **Upgrade path:** on an arm64 (Apple Silicon) or CUDA host, drop these caps and
 move to **anomalib 2.x + current torch**. The Phase-1+ stack (LangGraph, VLM,
 FastAPI, Langfuse) is independent of this detector pin.
+
+**Phase-3 serving pins (added, resolved cleanly against the base — no cap conflicts):**
+`langgraph==1.2.8` · `langgraph-checkpoint-sqlite==3.1.0` · `fastapi==0.139.0` ·
+`uvicorn==0.50.2`; `httpx` promoted from an implicit anthropic transitive to an
+**explicit dev-group pin** (tests import it directly for `TestClient` — a transitive
+dep is fragile if anthropic ever drops it). Torch-free: `aiqs.api`/`aiqs.graph` never
+import anomalib/torch (verified — `sys.modules` checked empty of both after import).
 
 **anomalib 1.2.0 packaging gotchas (already handled in pyproject):** the wheel
 under-declares deps and eagerly imports *every* model at
@@ -263,6 +275,73 @@ decision log — so substrate hunting moved to **VisA** (auto-downloads, no form
       unclassified escapes; a cost-matrix sweep locating where the crop's recall-gain beats
       its overkill-cost. `macaroni1` second-ground TRIGGER is now armed (capsules gave a
       positive → macaroni1 would be a second envelope point / validation).
+
+**Phase 3 — Productization slice: LangGraph orchestration + FastAPI Intelligent API.
+✅ COMPLETE (164/164 tests, real-run integration verified, live demo run).** Scope is
+explicitly a **productization slice**, not the old distant-horizon list: similar-case
+retrieval, memory, root-cause agent, and the conversational copilot are Phase-4 backlog
+(logged above, not scaffolded). The decision layer's math (Venn-Abers, cost matrix,
+guards) is IMPORTED, never forked — this phase orchestrates and serves it.
+
+- [x] **LangGraph orchestration** (`src/aiqs/graph/`) — `state.py` (Pydantic
+      `AdjudicationState`), `nodes.py` (`ingest`, `calibrate`, `cost_policy`,
+      `vlm_second_look`, `vlm_abstain_rule`, `human_interrupt`, `finalize`),
+      `build.py` (`build_graph(artifact, backend, checkpointer)`), `cli.py`
+      (`aiqs-graph`, a thin one-item demo/debug CLI sharing `build_graph` with
+      `aiqs-serve` — one graph, two front doors).
+- [x] **Decision artifact** (`src/aiqs/api/artifact.py`) — loads a run directory
+      exactly like `aiqs-decide` does (`_find_run_dir`/`_load_scores`, imported not
+      forked): the calibration set IS the run's own labelled `image_scores.csv`.
+      `DecisionArtifact.calibrate(score, target_prevalence)` does LIVE inductive
+      Venn-Abers (`ivap`) + the same `prior_shift` `aiqs-decide` uses — see the decision
+      log entry below for why this is the *correct* choice, not a workaround, and why
+      it legitimately diverges from the run's committed cross/OOF `decision_scores.csv`.
+      `category` is parsed from the RUN DIRECTORY NAME, not `config.yaml` (a provenance
+      gap found in passing: `evaluate.py` persists the raw `--config` file text, which
+      can predate a CLI `--category` override — flagged as a follow-up task, not fixed
+      here). `check_not_degenerate` re-runs at load: a broken run refuses to serve.
+- [x] **FastAPI Intelligent API** (`src/aiqs/api/main.py`, entry `aiqs-serve`) —
+      `POST /adjudicate`, `POST /human-verdict/{item_id}`, `GET /decisions/{item_id}`,
+      `GET /config` (secrets redacted — only the auth env-var NAME is ever returned,
+      never its value), `GET /health`. Single env-var API-key auth
+      (`--auth-env`, default `AIQS_API_KEY`; unset ⇒ disabled with a loud startup
+      warning, dev mode only). Cost matrix + target prevalence are per-request
+      overridable (`target_prevalence` also accepts the literal `"native"` = no
+      prior-shift); the response always states the applied regime — the operating-
+      envelope finding (Phase 1) exposed as a product feature, not a caveat.
+- [x] **thread_id = item_id; explicit 409 on collision** (never a silent overwrite):
+      re-posting an in-flight OR already-finalized `item_id` to `/adjudicate` returns
+      `409` pointing at `GET /decisions/{id}` or `POST /human-verdict/{id}` as
+      appropriate. Checked via `graph.get_state(config).values` (empty dict ⇔ a
+      genuinely untouched thread — verified empirically, see decision log).
+- [x] **image_path confined to a configured `--image-root`** (path-traversal guard);
+      unset ⇒ `image_path` requests are rejected outright (400) and `image_b64` (decoded
+      to a per-run `serve_uploads/` dir, gitignored) is the safe default with zero
+      server-filesystem exposure.
+- [x] **Audit trace = LangGraph's own `get_state_history`**, not a hand-rolled log —
+      every node's input/output is already checkpointed by the graph; Phase 3 reads it
+      rather than re-implementing tracing.
+- [x] **Node-composition parity guard** (`tests/test_graph_parity.py`, mandated before
+      the graph could be trusted) — `vlm_second_look`+`vlm_abstain_rule` composed
+      directly reproduce `aiqs.vlm.adjudicate.adjudicate()` byte-for-byte on identical
+      (VLMState, backend, cost, lam); a separate check reproduces `decide_one()` and the
+      SAME `prior_shift` path exactly through the graph's `cost_policy`/`calibrate`
+      nodes. Guards the two-node split (chosen for per-node audit granularity) against
+      ever silently drifting from the single-pass pipeline it decomposes.
+- [x] **Tests: 164/164** (48 new — parity, graph paths incl. human-interrupt/resume,
+      API contract incl. 409/404/path-traversal/schema-validation, and one integration
+      test loading the REAL committed capsules headline run end-to-end, VLM mocked).
+      `tests/conftest.py` adds a shared synthetic `DecisionArtifact` fixture with three
+      anchor scores verified (via `ivap` directly) to land in PASS/ESCALATE/FAIL.
+- [x] `make serve RUN=<id> [PROVIDER=mock|anthropic|openai_compatible]`,
+      `scripts/demo_requests.sh <run_id>` (the single continuous demo flow: clean PASS →
+      escalation engages the VLM → the VLM abstains → the graph pauses → human resume),
+      README "Serving" section, `docs/ARCHITECTURE.md` §6 (graph diagram + design notes).
+- [x] Live-verified, not just tested: `aiqs-graph`/`aiqs-serve` run for real (mock VLM)
+      against the committed capsules run — clean PASS, VLM-auto-resolve, and the full
+      pause→`POST /human-verdict`→resume round trip all observed via actual HTTP calls
+      (`curl`/`TestClient`), per the project's "test suites verify correctness, not
+      feature behavior — demo it live" discipline.
 
 ## Decision log
 
@@ -746,6 +825,94 @@ decision log — so substrate hunting moved to **VisA** (auto-downloads, no form
   optional): ARM-C free-tier cost-scaling point; the blind human read; macaroni1 second ground
   (user's explicit call: PROBABLY SKIP — marginal portfolio value below the opportunity cost of
   interview prep; the project is "proven and narratable", which it now is).
+- **2026-07-07** — **Phase 3 design LOCKED via propose→confirm (branch
+  `phase3-productization` off `main`).** User approved the outline with two "yes, and"
+  conditions and three technical review notes; all five are load-bearing, recorded here
+  so a future session does not "simplify" one of them away.
+  1. **Node split (`vlm_second_look`/`vlm_abstain_rule` as two nodes, not one call into
+     `aiqs.vlm.adjudicate.adjudicate()`) — approved, WITH a mandatory parity test.**
+     Rationale for the split: per-node audit-trace granularity (LangGraph's own
+     `get_state_history` becomes the audit trace — "use the existing machine, don't
+     reinvent it"). Risk: `adjudicate()` could carry ordering/guard logic beyond
+     composition that the split silently drops. Mitigation (built, not deferred):
+     `tests/test_graph_parity.py` feeds the IDENTICAL `VLMState`/backend/cost/lam
+     through both paths and asserts byte-identical output — the permanent insurance
+     against this exact silent-drift failure mode.
+  2. **Sync `SqliteSaver`, not `AsyncSqliteSaver` — approved.** Right-sized for a demo
+     API: no async/await surface to buy, FastAPI's threadpool handles sync routes.
+  3. **`thread_id = item_id` collision — resolved EXPLICITLY as `409`, never idempotent
+     silent-return.** A second `POST /adjudicate` on an in-flight or finalized item_id
+     is a real API-contract edge, not a detail to leave ambiguous. Detected via
+     `graph.get_state(config).values` being non-empty (verified empirically: a
+     never-touched thread_id's `get_state(...).values == {}` — see the langgraph-API
+     verification entry below).
+  4. **Live inductive Venn-Abers is the CORRECT choice, not a persistence workaround —
+     reframed, not just approved.** The original outline undersold this as "we can't
+     persist a fitted calibrator so we recompute online"; the sharper and correct framing
+     (user's correction, kept verbatim in `aiqs/api/artifact.py`'s module docstring):
+     Venn-Abers is not a "fit once, predict many" object in the first place — a
+     prediction for one test point is DEFINED as re-fitting isotonic regression with
+     that point appended under each hypothetical label (`ivap`'s own docstring, Phase 1).
+     A cached "fitted calibrator" would be an APPROXIMATION of inference-time Venn-Abers,
+     not the real thing; the live computation against the run's own labelled
+     `image_scores.csv` (via `DecisionArtifact.calibrate`) IS the real thing. No
+     performance concern (isotonic regression on ~100-200 points is microseconds), no
+     leakage (a genuinely new score was never in the calibration set), stays torch-free.
+     **The nuance flagged before any test was written (so no one "fixes" it later):**
+     serve-time p will NOT bit-match the run's own committed `decision_scores.csv`,
+     because that file holds CROSS/out-of-fold Venn-Abers (`cross_venn_abers` —
+     every item's p comes from a calibrator that excluded that item's own fold, needed
+     because those items ALSO carry ground truth used for evaluation), whereas serving a
+     brand-new unlabelled score correctly uses the FULL labelled set (plain `ivap`, no
+     fold to exclude it from). Both are valid Venn-Abers estimators; they are simply
+     different estimators, and exact agreement would actually be a red flag (it would
+     mean the "held-out" fold wasn't held out). Executable proof, not just a comment:
+     `tests/test_graph_parity.py::test_serve_time_p_differs_from_oof_p_by_design` asserts
+     `not np.allclose(p_oof, p_serve)` on a shared synthetic set. Documented in three
+     places (artifact.py docstring, README Serving section, this entry) specifically so
+     the discrepancy is never mistaken for a bug.
+  5. **Three technical review notes, all implemented:** (a) `image_path` confined to a
+     configured `--image-root` (path-traversal guard), rejected outright if unset;
+     `image_b64` is the safe default. (b) `httpx` promoted to an explicit dev-group pin
+     (tests import it directly; a transitive dep from `anthropic` is fragile). (c) the
+     serve path's `target_prevalence` override goes through the SAME
+     `aiqs.eval.decision.prior_shift` (Saerens/Elkan) `aiqs-decide` uses — covered by
+     `test_calibrate_node_uses_the_same_prior_shift_as_decide_py`, not a re-derivation.
+- **2026-07-07** — **LangGraph 1.2.8 API verified empirically BEFORE wiring the real
+  graph** (the project's standing "measure, don't assume" rule — same discipline as the
+  crop-instrument dry-run against real maps). Findings that shaped `src/aiqs/graph/`:
+  (1) a Pydantic `BaseModel` works directly as `StateGraph`'s `state_schema` — but node
+  functions receive a VALIDATED MODEL INSTANCE (attribute access), while `invoke()`/
+  `get_state()` hand back PLAIN DICTS at the external boundary — a real gotcha; the
+  first draft of `nodes.py` used dict-subscript access inside nodes and crashed
+  (`'AdjudicationState' object is not subscriptable`), fixed to attribute access.
+  (2) Always invoke with a plain `dict`, never a live model instance — passing an
+  instance triggers the checkpointer's pickle-fallback serde path (a
+  "Deserializing unregistered type" warning); a dict stays on the fast, portable path.
+  (3) On `interrupt()`, `graph.invoke()` returns a dict containing `__interrupt__`; a
+  never-touched `thread_id`'s `get_state(config).values == {}` (the exact fact the 409
+  collision check relies on). (4) Resuming via `Command(resume=...)` RE-EXECUTES the
+  interrupted node from its start — any code before the `interrupt()` call re-runs
+  (verified with a side-effect counter: 1 call pre-interrupt, 2 after one resume). This
+  is why `human_interrupt` has ZERO side effects before its `interrupt()` line — the VLM
+  call already happened once, in the separate prior `vlm_second_look` node, which sits
+  outside the interrupt's replay range and is never re-invoked on resume (also asserted
+  in `tests/test_graph.py::test_escalate_vlm_abstains_then_human_resume`).
+- **2026-07-07** — **PHASE 3 COMPLETE.** LangGraph orchestration (`src/aiqs/graph/`) +
+  FastAPI Intelligent API (`src/aiqs/api/`) built, tested (164/164, +48 new: parity,
+  graph paths, API contract, one real-run integration test), and LIVE-DEMOED (not just
+  unit-tested) against the committed capsules headline run: clean PASS, VLM-auto-resolve
+  on an escalated item, and the full pause→`POST /human-verdict`→resume round trip all
+  observed via actual HTTP requests. Serving confirmed torch-free (`sys.modules` checked
+  empty of `torch`/`anomalib` after importing `aiqs.api.main`). A real, surfaced-not-fixed
+  finding along the way: `evaluate.py` persists a run's `config.yaml` from the raw
+  `--config` FILE TEXT, not the effective post-CLI-override config — caught because the
+  committed capsules run's `config.yaml` says `category: candle` (the sweep config's
+  default) despite being a capsules run; the artifact loader sidesteps it by parsing
+  category from the run DIRECTORY NAME instead (always correct — derived from
+  `Config.run_id` at the time the run actually happened). Filed as a follow-up task, not
+  fixed in this phase (out of scope for serving). Memory/similar-case retrieval/
+  root-cause agent/conversational copilot remain explicit Phase-4 backlog, not scaffolded.
 
 ## How Phase 1 extends the eval contract
 
