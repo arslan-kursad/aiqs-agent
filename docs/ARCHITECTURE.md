@@ -1,8 +1,8 @@
 # Architecture
 
-AIQS-Agent is a **decision + reasoning layer on top of a commodity anomaly detector**.
-This document shows how the pieces fit, visually. The durable rationale for every design
-decision lives in [CLAUDE.md](../CLAUDE.md) (decision log).
+Anomaly Adjudicator is a **decision + reasoning layer on top of a commodity anomaly
+detector**. This document shows how the pieces fit, visually. The durable rationale for
+every design decision lives in [CLAUDE.md](../CLAUDE.md) (decision log).
 
 ## 1. System overview
 

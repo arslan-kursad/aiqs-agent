@@ -1,4 +1,4 @@
-# AIQS-Agent — task runner.
+# Anomaly Adjudicator — task runner.
 # Usage:
 #   make install
 #   make train                      # full config budget

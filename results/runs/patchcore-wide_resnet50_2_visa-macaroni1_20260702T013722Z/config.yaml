@@ -10,7 +10,7 @@
 # Sweep 2-3 (pcb1-4 are visually complex; macaroni/fryum have high normal variance).
 
 seed: 42
-category: macaroni1  # manually corrected 2026-07-07 -- config.yaml originally persisted the un-overridden --config default (root cause: https://github.com/arslan-kursad/aiqs-agent/issues/3)
+category: macaroni1  # manually corrected 2026-07-07 -- config.yaml originally persisted the un-overridden --config default (root cause: https://github.com/arslan-kursad/anomaly-adjudicator/issues/3)
 
 dataset:
   name: visa

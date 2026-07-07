@@ -21,8 +21,8 @@
 # `_detector_v2`/`_data_v2` automatically once anomalib 2.x is the installed version.
 #
 # On Colab/Kaggle (each `!` line is a fresh shell — use the magics so state persists):
-#   %cd /content/aiqs-agent
-#   %env PYTHONPATH=/content/aiqs-agent/src
+#   %cd /content/anomaly-adjudicator
+#   %env PYTHONPATH=/content/anomaly-adjudicator/src
 #   !pip install -r requirements-ad2.txt
 #   !python scripts/run_ad2_gpu.py --category sheet_metal --smoke
 #
