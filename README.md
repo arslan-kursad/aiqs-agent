@@ -12,6 +12,7 @@ rebrand for search clarity, not a repo rename.)_
 [![LangGraph](https://img.shields.io/badge/LangGraph-1.2-1C3C3C)](https://www.langchain.com/langgraph)
 [![Claude](https://img.shields.io/badge/Claude-sonnet--4--6-D97757?logo=anthropic&logoColor=white)](https://www.anthropic.com/)
 [![uv](https://img.shields.io/badge/uv-package%20manager-DE5FE9)](https://github.com/astral-sh/uv)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
 **Cost-aware, abstaining decision layer for industrial visual inspection** — calibrated
 PASS/FAIL/ESCALATE with a VLM second-look. Venn-Abers conformal calibration, cost-matrix
@@ -254,3 +255,7 @@ separate requirements file (the two stacks are mutually exclusive by dependency 
 measured, documented in [CLAUDE.md](CLAUDE.md)). Serving (Phase 3) adds
 `langgraph · langgraph-checkpoint-sqlite · fastapi · uvicorn` — independent of the
 detector pin, torch-free, installs on the same local stack.
+
+## License
+
+[MIT](LICENSE) — © 2026 Kürşad Arslan.
