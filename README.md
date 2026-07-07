@@ -1,5 +1,14 @@
 # AIQS-Agent
 
+[![Python 3.11](https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![PyTorch 2.2](https://img.shields.io/badge/PyTorch-2.2-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![anomalib](https://img.shields.io/badge/anomalib-1.2-6A0DAD)](https://github.com/openvinotoolkit/anomalib)
+[![scikit-learn](https://img.shields.io/badge/scikit--learn-1.4-F7931E?logo=scikitlearn&logoColor=white)](https://scikit-learn.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.139-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-1.2-1C3C3C)](https://www.langchain.com/langgraph)
+[![Claude](https://img.shields.io/badge/Claude-sonnet--4--6-D97757?logo=anthropic&logoColor=white)](https://www.anthropic.com/)
+[![uv](https://img.shields.io/badge/uv-package%20manager-DE5FE9)](https://github.com/astral-sh/uv)
+
 **An agentic adjudication layer for industrial visual quality inspection** — cost-aware,
 calibrated, *abstaining* decisions layered on top of an off-the-shelf anomaly detector,
 with a VLM second-look on exactly the items the policy cannot decide.
