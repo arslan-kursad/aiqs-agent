@@ -16,6 +16,32 @@ with a VLM second-look on exactly the items the policy cannot decide.
 
 ---
 
+## The story, end to end
+
+1. **Honest null.** The first real detector (600-step EfficientAD, image-AUROC 0.559) had
+   no exploitable signal. The decision layer's own guard refused to manufacture a
+   false-positive headline from it — that refusal, not a number, was the first result.
+2. **Hardware diagnosis.** This runs on a 2-core, CUDA-free, MPS-free Intel Mac. That
+   constraint pinned the detector stack to anomalib 1.2/torch 2.2.2 (the last x86_64-macOS
+   wheel) and pushed real training to Colab/Kaggle GPU — while keeping the decision layer
+   itself pure numpy/sklearn, so it runs anywhere the detector doesn't need to.
+3. **Substrate hunt.** A strong detector (PatchCore, image-AUROC 0.976) saturates standard
+   MVTec — no borderline items left to adjudicate. Measured, not assumed: a VisA sweep
+   found three genuinely hard categories (`capsules`, `macaroni1`, `macaroni2`) with real
+   ESCALATE-bucket substrate.
+4. **Tier-sensitive mechanism.** The VLM second-look is not one story: Haiku is a rubber
+   stamp (545/545 "clean"), while Sonnet's anomaly-map crop cuts escape 0.500→0.115 with
+   powered, non-degenerate independence — identical bucket and prompt, different model
+   tier, opposite conclusion. The mechanism is measured per tier, never assumed to transfer.
+5. **Regime-conditional verdict.** Neither the decision layer nor the VLM crop wins
+   universally — each reports the operating envelope it actually measured (cheap review /
+   weak detector / escape-dominant costs favor the layer; a strong detector with expensive
+   review favors a tuned threshold). The API productizes this directly: every decision
+   states the regime that produced it.
+6. **Torch-free serving.** Phase 3 turns the proven pipeline into a LangGraph + FastAPI
+   service that reads a completed run directory as its only input — no detector, no torch,
+   auditable by construction, live-demoed end to end (see [Serving](#serving-phase-3)).
+
 ## How it works
 
 ```mermaid

@@ -907,12 +907,44 @@ guards) is IMPORTED, never forked — this phase orchestrates and serves it.
   empty of `torch`/`anomalib` after importing `aiqs.api.main`). A real, surfaced-not-fixed
   finding along the way: `evaluate.py` persists a run's `config.yaml` from the raw
   `--config` FILE TEXT, not the effective post-CLI-override config — caught because the
-  committed capsules run's `config.yaml` says `category: candle` (the sweep config's
+  committed capsules run's `config.yaml` said `category: candle` (the sweep config's
   default) despite being a capsules run; the artifact loader sidesteps it by parsing
   category from the run DIRECTORY NAME instead (always correct — derived from
-  `Config.run_id` at the time the run actually happened). Filed as a follow-up task, not
-  fixed in this phase (out of scope for serving). Memory/similar-case retrieval/
+  `Config.run_id` at the time the run actually happened). Memory/similar-case retrieval/
   root-cause agent/conversational copilot remain explicit Phase-4 backlog, not scaffolded.
+- **2026-07-07** — **Provenance cleanup BEFORE merging Phase 3 (user directive): the
+  code correctly working around a bug is not the same as the committed artifact being
+  honest.** Leaving 12 committed runs' `config.yaml` showing the wrong category (the
+  Phase-2B HEADLINE capsules run included) would sit directly on top of this project's
+  stated integrity claim — a reviewer who checks `config.yaml` and sees `candle` on a
+  run cited everywhere as "capsules" would reasonably distrust everything else. Root-
+  cause code fix (making `evaluate.py`/`results.py` persist the effective `cfg`, not the
+  raw `--config` file text) is correctly scoped OUT of this phase (a separate concern,
+  already spawned as its own background task — do not duplicate); but the WRONG
+  ARTIFACT sitting in the repo is a different, cheaper, more urgent problem than the
+  code bug that produced it.
+  - **Audited all 15 committed run dirs**: 12 had a mismatched `category:` field — every
+    run whose category was CLI-overridden away from the `--config` file's hardcoded
+    default (`screw` for the MVTec config, `candle` for the VisA sweep config). The 3
+    "clean" runs were only correct by *coincidence* (their category happened to equal
+    the file default), which is exactly why the bug was invisible until now.
+  - **Manually corrected all 12** (`category: <correct value>` + an inline YAML comment
+    on the same line naming the fix, the date, and the tracking issue — visible in the
+    artifact itself, not just the commit message): `patchcore-wide_resnet50_2_mvtec-
+    capsule_20260623T142659Z` (screw→capsule); all 7 `visa-capsules_*` run dirs incl. the
+    headline `20260706T051813Z` (candle→capsules); `visa-macaroni1_20260702T013722Z`
+    (→macaroni1); `visa-macaroni2_20260702T020900Z` (→macaroni2);
+    `visa-pcb1_20260702T024050Z` (→pcb1); `visa-pcb2_20260702T031400Z` (→pcb2).
+  - **Root cause tracked as a public GitHub issue**
+    ([#3](https://github.com/arslan-kursad/aiqs-agent/issues/3)), not just a private
+    note — "known and being watched" should be externally visible, the same honesty
+    standard the guards in this project already apply to results (a documented known
+    issue is the code-review equivalent of a pre-registered caveat).
+  - Zero code changes; `tests/test_serve_integration.py` re-run clean (the artifact
+    loader never trusted `config.yaml` for category, so this is a data-only fix).
+  - **Sequencing (user's explicit call): this lands BEFORE merging Phase 3 to `main`,**
+    same day but in order — the integrity claim only fully holds if `main` is clean at
+    the moment it becomes "official."
 
 ## How Phase 1 extends the eval contract
 
