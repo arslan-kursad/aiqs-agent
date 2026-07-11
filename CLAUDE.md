@@ -968,6 +968,8 @@ guards) is IMPORTED, never forked — this phase orchestrates and serves it.
   copy (README text, safe to change unconditionally) — verify the former before
   building a sweep that assumes it, but don't let a failed slug-rename block the
   display-copy win, which is unconditionally available.
+- **2026-07-11** — README hero image added (`docs/assets/hero.png`), generated via Claude
+  Design, matches the slate/signal-color visual identity used across LinkedIn assets.
 
 ## How Phase 1 extends the eval contract
 
