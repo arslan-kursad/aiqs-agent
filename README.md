@@ -1,3 +1,5 @@
+<img src="docs/assets/hero.png" alt="Anomaly Adjudicator — decision layer pipeline: Detector, Calibration, Cost-Matrix Gate, PASS/FAIL/ESCALATE, VLM second-look" width="100%">
+
 # Anomaly Adjudicator
 
 _(GitHub repo: [`aiqs-agent`](https://github.com/arslan-kursad/aiqs-agent) — the repo
