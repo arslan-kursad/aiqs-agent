@@ -1,0 +1,65 @@
+# CI — lint + test on every push/PR to main.
+#
+# The test suite is deliberately torch-free in its assertions (all VLM/API calls
+# are mocked), but the *import graph* pulls torch/anomalib because it's a single
+# installable package. So we install the full dependency set.
+#
+# Runtime: ~5-8 min on ubuntu-latest (most of it is the torch wheel download +
+# uv resolve). Caching the uv store cuts repeat runs to ~2 min.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Ruff check (lint)
+        run: uv run ruff check src/ tests/
+        continue-on-error: true   # advisory until ruff config is tuned
+
+      - name: Ruff format check
+        run: uv run ruff format --check src/ tests/
+        continue-on-error: true   # advisory until formatting is enforced
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Run tests
+        run: uv run --group dev pytest -q --tb=short

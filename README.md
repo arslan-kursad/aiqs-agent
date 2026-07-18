@@ -6,6 +6,7 @@ _(GitHub repo: [`aiqs-agent`](https://github.com/arslan-kursad/aiqs-agent) — t
 slug and the `aiqs` Python package/CLI names are unchanged; this is a display-name-only
 rebrand for search clarity, not a repo rename.)_
 
+[![CI](https://github.com/arslan-kursad/aiqs-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/arslan-kursad/aiqs-agent/actions/workflows/ci.yml)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PyTorch 2.2](https://img.shields.io/badge/PyTorch-2.2-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
 [![anomalib](https://img.shields.io/badge/anomalib-1.2-6A0DAD)](https://github.com/openvinotoolkit/anomalib)
